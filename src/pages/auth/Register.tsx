@@ -17,37 +17,98 @@ const Register: React.FC = () => {
   const { register } = useAuth();
   const navigate = useNavigate();
 
+  const validateForm = () => {
+    // Reset error
+    setError(null);
+
+    // Basic validation
+    if (!firstName.trim()) {
+      setError('First name is required');
+      return false;
+    }
+
+    if (!lastName.trim()) {
+      setError('Last name is required');
+      return false;
+    }
+
+    if (!email.trim()) {
+      setError('Email address is required');
+      return false;
+    }
+
+    if (!email.includes('@') || !email.includes('.')) {
+      setError('Please enter a valid email address');
+      return false;
+    }
+
+    if (!password) {
+      setError('Password is required');
+      return false;
+    }
+
+    if (password.length < 6) {
+      setError('Password must be at least 6 characters long');
+      return false;
+    }
+
+    if (password !== confirmPassword) {
+      setError('Passwords do not match');
+      return false;
+    }
+
+    if (!initialBalance || parseFloat(initialBalance) < 0) {
+      setError('Initial balance must be a valid positive number');
+      return false;
+    }
+
+    return true;
+  };
+
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     setIsLoading(true);
-    setError(null);
     
-    if (password !== confirmPassword) {
-      setError('Passwords do not match');
+    // Validate form
+    if (!validateForm()) {
       setIsLoading(false);
       return;
     }
     
     try {
       await register({
-        email,
+        email: email.trim().toLowerCase(),
         password,
-        name: `${firstName} ${lastName}`.trim(),
-        firstName,
-        lastName,
+        name: `${firstName.trim()} ${lastName.trim()}`,
+        firstName: firstName.trim(),
+        lastName: lastName.trim(),
         initialBalance: parseFloat(initialBalance),
       });
+      
+      // Registration successful, navigate to dashboard
       navigate('/dashboard');
     } catch (err: any) {
-      setError(err.message || 'Registration failed');
-    } finally {
+      // Handle specific error messages from server
+      if (err.message) {
+        setError(err.message);
+      } else {
+        setError('Registration failed. Please try again.');
+      }
       setIsLoading(false);
     }
   };
 
+  const handleTermsClick = () => {
+    alert('Terms of Service will be displayed here.');
+  };
+
+  const handlePrivacyClick = () => {
+    alert('Privacy Policy will be displayed here.');
+  };
+
   return (
     <div className="min-h-screen flex">
-      {/* Left Side - Hero Image - Wider and Complete */}
+      {/* Left Side - Hero Image */}
       <div className="hidden lg:flex lg:w-3/5 relative overflow-hidden">
         <div 
           className="absolute inset-0 bg-cover bg-center bg-no-repeat"
@@ -55,7 +116,7 @@ const Register: React.FC = () => {
         />
         <div className="absolute inset-0 bg-gradient-to-br from-primary/10 to-purple-600/20" />
         
-        {/* Quote Overlay - Bottom positioned */}
+        {/* Quote Overlay */}
         <div className="relative z-10 flex items-end justify-center p-8">
           <div className="max-w-md text-center mb-12">
             <div className="bg-white/80 backdrop-blur-sm p-6 rounded-2xl shadow-lg">
@@ -73,12 +134,12 @@ const Register: React.FC = () => {
         </div>
       </div>
 
-      {/* Right Side - Single Card with Logo and Form */}
+      {/* Right Side - Registration Form */}
       <div className="flex-1 lg:w-2/5 flex items-center justify-center p-6 animated-gradient">
         <div className="w-full max-w-lg">
-          {/* Single Card with 60% Opacity containing everything */}
+          {/* Single Card with 60% Opacity */}
           <div className="bg-white/60 backdrop-blur-lg shadow-2xl rounded-2xl p-8">
-            {/* Branding inside the card */}
+            {/* Branding */}
             <div className="text-center mb-6">
               <div className="flex items-center justify-center mb-3">
                 <img 
@@ -103,6 +164,7 @@ const Register: React.FC = () => {
               </p>
             </div>
 
+            {/* Error Message */}
             {error && (
               <div className="mb-4 bg-red-50 border-l-4 border-red-400 p-3 rounded-lg">
                 <div className="flex">
@@ -134,6 +196,7 @@ const Register: React.FC = () => {
                     onChange={(e) => setFirstName(e.target.value)}
                     className="block w-full px-3 py-2.5 border border-gray-300 rounded-lg shadow-sm placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-primary focus:border-primary transition-colors bg-white/70 backdrop-blur-sm text-sm"
                     placeholder="John"
+                    disabled={isLoading}
                   />
                 </div>
 
@@ -150,6 +213,7 @@ const Register: React.FC = () => {
                     onChange={(e) => setLastName(e.target.value)}
                     className="block w-full px-3 py-2.5 border border-gray-300 rounded-lg shadow-sm placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-primary focus:border-primary transition-colors bg-white/70 backdrop-blur-sm text-sm"
                     placeholder="Doe"
+                    disabled={isLoading}
                   />
                 </div>
               </div>
@@ -169,6 +233,7 @@ const Register: React.FC = () => {
                   onChange={(e) => setEmail(e.target.value)}
                   className="block w-full px-3 py-2.5 border border-gray-300 rounded-lg shadow-sm placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-primary focus:border-primary transition-colors bg-white/70 backdrop-blur-sm text-sm"
                   placeholder="john@example.com"
+                  disabled={isLoading}
                 />
               </div>
 
@@ -188,6 +253,7 @@ const Register: React.FC = () => {
                   onChange={(e) => setInitialBalance(e.target.value)}
                   className="block w-full px-3 py-2.5 border border-gray-300 rounded-lg shadow-sm placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-primary focus:border-primary transition-colors bg-white/70 backdrop-blur-sm text-sm"
                   placeholder="10000"
+                  disabled={isLoading}
                 />
               </div>
 
@@ -206,6 +272,7 @@ const Register: React.FC = () => {
                   onChange={(e) => setPassword(e.target.value)}
                   className="block w-full px-3 py-2.5 border border-gray-300 rounded-lg shadow-sm placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-primary focus:border-primary transition-colors bg-white/70 backdrop-blur-sm text-sm"
                   placeholder="Create a strong password"
+                  disabled={isLoading}
                 />
               </div>
 
@@ -223,6 +290,7 @@ const Register: React.FC = () => {
                   onChange={(e) => setConfirmPassword(e.target.value)}
                   className="block w-full px-3 py-2.5 border border-gray-300 rounded-lg shadow-sm placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-primary focus:border-primary transition-colors bg-white/70 backdrop-blur-sm text-sm"
                   placeholder="Confirm your password"
+                  disabled={isLoading}
                 />
               </div>
 
@@ -258,11 +326,21 @@ const Register: React.FC = () => {
               <div className="text-center pt-3 border-t border-gray-200">
                 <p className="text-xs text-gray-600">
                   By creating an account, you agree to our{' '}
-                  <button type="button" className="text-primary hover:text-primary-dark underline">
+                  <button 
+                    type="button" 
+                    onClick={handleTermsClick}
+                    className="text-primary hover:text-primary-dark underline"
+                    disabled={isLoading}
+                  >
                     Terms of Service
                   </button>
                   and{' '}
-                  <button type="button" className="text-primary hover:text-primary-dark underline">
+                  <button 
+                    type="button" 
+                    onClick={handlePrivacyClick}
+                    className="text-primary hover:text-primary-dark underline"
+                    disabled={isLoading}
+                  >
                     Privacy Policy
                   </button>
                 </p>

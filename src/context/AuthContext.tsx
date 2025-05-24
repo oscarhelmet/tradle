@@ -1,5 +1,24 @@
 import React, { createContext, useContext, useReducer, useEffect } from 'react';
 import { AuthState, User, LoginCredentials, RegisterCredentials, AuthResponse } from '../models/User';
+import { apiService } from '../services/api/ApiService';
+
+// Define missing interfaces
+interface RegisterData {
+  email: string;
+  password: string;
+  name: string;
+  firstName: string;
+  lastName: string;
+  initialBalance: number;
+}
+
+interface ServerResponse {
+  success: boolean;
+  error?: string;
+  token?: string;
+  user?: User;
+  data?: any;
+}
 
 // Define action types
 type AuthAction =
@@ -10,22 +29,23 @@ type AuthAction =
   | { type: 'REGISTER_SUCCESS'; payload: AuthResponse }
   | { type: 'REGISTER_FAILURE'; payload: string }
   | { type: 'UPDATE_USER'; payload: User }
-  | { type: 'LOGOUT' };
+  | { type: 'LOGOUT' }
+  | { type: 'SET_LOADING'; payload: boolean };
 
 // Initial state
 const initialState: AuthState = {
   user: null,
   token: null,
   isAuthenticated: false,
-  isLoading: false,
+  isLoading: true,
   error: null,
 };
 
 // Create context
 const AuthContext = createContext<{
   state: AuthState;
-  login: (credentials: LoginCredentials) => Promise<void>;
-  register: (credentials: RegisterCredentials) => Promise<void>;
+  login: (email: string, password: string) => Promise<void>;
+  register: (userData: RegisterData) => Promise<void>;
   updateUser: (user: User) => void;
   logout: () => void;
 }>({
@@ -75,6 +95,11 @@ const authReducer = (state: AuthState, action: AuthAction): AuthState => {
       return {
         ...initialState,
       };
+    case 'SET_LOADING':
+      return {
+        ...state,
+        isLoading: action.payload,
+      };
     default:
       return state;
   }
@@ -84,132 +109,117 @@ const authReducer = (state: AuthState, action: AuthAction): AuthState => {
 export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children }) => {
   const [state, dispatch] = useReducer(authReducer, initialState);
 
-  // Check for stored token on mount
+  // Check for existing token on app load
   useEffect(() => {
     const token = localStorage.getItem('token');
-    const userStr = localStorage.getItem('user');
+    const userData = localStorage.getItem('user');
     
-    if (token && userStr) {
+    if (token && userData) {
       try {
-        const user = JSON.parse(userStr) as User;
-        dispatch({ 
-          type: 'LOGIN_SUCCESS', 
-          payload: { user, token } 
-        });
+        const user = JSON.parse(userData);
+        dispatch({ type: 'LOGIN_SUCCESS', payload: { user, token } });
       } catch (error) {
+        console.error('Error parsing stored user data:', error);
         localStorage.removeItem('token');
         localStorage.removeItem('user');
+        dispatch({ type: 'SET_LOADING', payload: false });
       }
+    } else {
+      dispatch({ type: 'SET_LOADING', payload: false });
     }
   }, []);
 
   // Login function
-  const login = async (credentials: LoginCredentials) => {
+  const login = async (email: string, password: string): Promise<void> => {
     dispatch({ type: 'LOGIN_START' });
     
     try {
-      // Import apiService here to avoid circular dependencies
-      const { apiService } = await import('../services/api/ApiService');
-      
-      // Test account for development
-      if (credentials.email === 'admin@admin.com' && credentials.password === 'admin') {
-        const adminUser: User = {
-          id: 'admin',
-          email: 'admin@admin.com',
-          name: 'Admin User',
-          createdAt: new Date(),
-          updatedAt: new Date(),
-          lastLogin: new Date(),
-        };
-        
-        const adminToken = 'admin-jwt-token';
-        
-        // Store in localStorage
-        localStorage.setItem('token', adminToken);
-        localStorage.setItem('user', JSON.stringify(adminUser));
-        
-        // Also set in apiService
-        apiService.setToken(adminToken);
-        
-        dispatch({ 
-          type: 'LOGIN_SUCCESS', 
-          payload: { user: adminUser, token: adminToken } 
-        });
-        return;
+      const response = await fetch(`${process.env.REACT_APP_API_URL}/auth/login`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({ email, password }),
+      });
+
+      const data: ServerResponse = await response.json();
+
+      if (!data.success) {
+        dispatch({ type: 'LOGIN_FAILURE', payload: data.error || 'Login failed' });
+        throw new Error(data.error || 'Login failed');
       }
-      
-      // Make actual API call to login
-      const response = await apiService.login(credentials.email, credentials.password);
-      
-      // Store in localStorage
-      localStorage.setItem('token', response.token);
-      localStorage.setItem('user', JSON.stringify(response.user));
-      
+
+      if (!data.token || !data.user) {
+        dispatch({ type: 'LOGIN_FAILURE', payload: 'Invalid server response' });
+        throw new Error('Invalid server response');
+      }
+
+      // Store token and user data
+      localStorage.setItem('token', data.token);
+      localStorage.setItem('user', JSON.stringify(data.user));
+
       dispatch({ 
         type: 'LOGIN_SUCCESS', 
-        payload: response
+        payload: { user: data.user, token: data.token } 
       });
-    } catch (error) {
-      dispatch({ 
-        type: 'LOGIN_FAILURE', 
-        payload: 'Invalid credentials. Please try again.' 
-      });
+
+    } catch (error: any) {
+      dispatch({ type: 'LOGIN_FAILURE', payload: error.message });
+      throw error;
     }
   };
 
   // Register function
-  const register = async (credentials: RegisterCredentials) => {
+  const register = async (userData: RegisterData): Promise<void> => {
     dispatch({ type: 'REGISTER_START' });
     
     try {
-      // Import apiService here to avoid circular dependencies
-      const { apiService } = await import('../services/api/ApiService');
-      
-      // Make actual API call to register
-      const registerUser = await apiService.register(
-        credentials.email, 
-        credentials.password, 
-        credentials.name,
-        credentials.initialBalance
-      );
-      
-      // Store in localStorage
-      localStorage.setItem('token', registerUser.token);
-      localStorage.setItem('user', JSON.stringify(registerUser.user));
-      
+      const response = await fetch(`${process.env.REACT_APP_API_URL}/auth/register`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify(userData),
+      });
+
+      const data: ServerResponse = await response.json();
+
+      if (!data.success) {
+        dispatch({ type: 'REGISTER_FAILURE', payload: data.error || 'Registration failed' });
+        throw new Error(data.error || 'Registration failed');
+      }
+
+      if (!data.token || !data.user) {
+        dispatch({ type: 'REGISTER_FAILURE', payload: 'Invalid server response' });
+        throw new Error('Invalid server response');
+      }
+
+      // Store token and user data
+      localStorage.setItem('token', data.token);
+      localStorage.setItem('user', JSON.stringify(data.user));
+
       dispatch({ 
         type: 'REGISTER_SUCCESS', 
-        payload: registerUser
+        payload: { user: data.user, token: data.token } 
       });
-    } catch (error) {
-      dispatch({ 
-        type: 'REGISTER_FAILURE', 
-        payload: 'Registration failed. Please try again.' 
-      });
+
+    } catch (error: any) {
+      dispatch({ type: 'REGISTER_FAILURE', payload: error.message });
+      throw error;
     }
   };
 
   // Logout function
   const logout = () => {
-    // Import apiService here to avoid circular dependencies
-    import('../services/api/ApiService').then(({ apiService }) => {
-      apiService.logout();
-      localStorage.removeItem('token');
-      localStorage.removeItem('user');
-      dispatch({ type: 'LOGOUT' });
-    });
+    localStorage.removeItem('token');
+    localStorage.removeItem('user');
+    dispatch({ type: 'LOGOUT' });
   };
 
   // Update user function
   const updateUser = (user: User) => {
-    // Update localStorage
     localStorage.setItem('user', JSON.stringify(user));
-    
-    // Update state
-    dispatch({ 
-      type: 'UPDATE_USER', 
-      payload: user 
-    });
+    dispatch({ type: 'UPDATE_USER', payload: user });
   };
 
   return (
