@@ -54,7 +54,7 @@ const QuickAddModal: React.FC<QuickAddModalProps> = ({ isOpen, onClose, onTrades
         const formData = new FormData();
         formData.append('image', file);
 
-        const response = await fetch(`${process.env.REACT_APP_API_URL || 'http://localhost:5000/api'}/reflection/analyze-image`, {
+        const response = await fetch(`${process.env.REACT_APP_API_URL}/reflection/analyze-image`, {
           method: 'POST',
           body: formData,
           headers: {

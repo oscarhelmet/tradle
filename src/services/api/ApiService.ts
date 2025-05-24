@@ -16,7 +16,7 @@ declare const process: {
 };
 
 // Base URL for API requests
-const API_BASE_URL = process.env.REACT_APP_API_URL || 'http://localhost:5000/api';
+const API_BASE_URL = process.env.REACT_APP_API_URL;
 
 // Empty arrays for initial state
 const emptyTrades: TradeEntry[] = [];
