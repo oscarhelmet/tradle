@@ -48,7 +48,6 @@ cd tradle
 2. Install dependencies for both frontend and backend
 ```
 # Install frontend dependencies
-cd tradle-app
 npm install
 
 # Install backend dependencies
