@@ -1,7 +1,6 @@
-import React, { useState, useEffect } from 'react';
-import { Link, useNavigate } from 'react-router-dom';
+import React, { useState, useEffect, useCallback } from 'react';
+import { Link } from 'react-router-dom';
 import { apiService } from '../../services/api/ApiService';
-import { TradeEntry } from '../../models/TradeEntry';
 import { TradeFilter } from '../../types/TradeFilter';
 import AddTradeDropdown from '../../components/ui/AddTradeDropdown';
 import MobilePageHeader from '../../components/ui/MobilePageHeader';
@@ -39,13 +38,8 @@ const Journal: React.FC = () => {
   const [currentPage, setCurrentPage] = useState(1);
   const [totalTrades, setTotalTrades] = useState(0);
   const tradesPerPage = 5;
-  const navigate = useNavigate();
 
-  useEffect(() => {
-    fetchTrades();
-  }, [currentPage]);
-
-  const fetchTrades = async () => {
+  const fetchTrades = useCallback(async () => {
     try {
       setIsLoading(true);
       const data = await apiService.getTrades({
@@ -62,7 +56,11 @@ const Journal: React.FC = () => {
     } finally {
       setIsLoading(false);
     }
-  };
+  }, [currentPage, tradesPerPage]);
+
+  useEffect(() => {
+    fetchTrades();
+  }, [fetchTrades]);
 
   const handleDelete = async (id: string) => {
     if (window.confirm('Are you sure you want to delete this trade?')) {
@@ -76,7 +74,7 @@ const Journal: React.FC = () => {
     }
   };
 
-  const applyFilters = () => {
+  const applyFilters = useCallback(() => {
     let filtered = trades;
 
     if (filters.instrumentName) {
@@ -114,7 +112,11 @@ const Journal: React.FC = () => {
     }
 
     setFilteredTrades(filtered);
-  };
+  }, [trades, filters]);
+
+  useEffect(() => {
+    applyFilters();
+  }, [applyFilters]);
 
   const clearFilters = () => {
     setFilters({
@@ -127,10 +129,6 @@ const Journal: React.FC = () => {
     });
     setFilteredTrades(trades);
   };
-
-  useEffect(() => {
-    applyFilters();
-  }, [filters, trades]);
 
   const totalPages = Math.ceil(totalTrades / tradesPerPage);
 

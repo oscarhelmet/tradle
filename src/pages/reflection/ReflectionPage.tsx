@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useCallback } from 'react';
 import { apiService } from '../../services/api/ApiService';
 import { TradeEntry } from '../../models/TradeEntry';
 
@@ -19,11 +19,7 @@ const ReflectionPage: React.FC = () => {
   const [error, setError] = useState<string | null>(null);
   const [customPrompt, setCustomPrompt] = useState('');
 
-  useEffect(() => {
-    fetchData();
-  }, []);
-
-  const fetchData = async () => {
+  const fetchData = useCallback(async () => {
     try {
       setIsLoading(true);
       const tradesData = await apiService.getTrades();
@@ -38,7 +34,11 @@ const ReflectionPage: React.FC = () => {
     } finally {
       setIsLoading(false);
     }
-  };
+  }, []);
+
+  useEffect(() => {
+    fetchData();
+  }, [fetchData]);
 
   const generateReflection = async (tradesData: TradeEntry[], prompt?: string) => {
     try {

@@ -1,6 +1,5 @@
 import React, { useState, useEffect } from 'react';
 import { apiService } from '../../services/api/ApiService';
-import { geminiService } from '../../services/gemini/GeminiService';
 import { TradeEntry } from '../../models/TradeEntry';
 import MobilePageHeader from '../../components/ui/MobilePageHeader';
 

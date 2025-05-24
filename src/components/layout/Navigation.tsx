@@ -6,7 +6,6 @@ import favicon from '../../assets/favicon.png';
 const Navigation: React.FC = () => {
   const { state, logout } = useAuth();
   const location = useLocation();
-  const [isMobileMenuOpen, setIsMobileMenuOpen] = useState(false);
   const [isProfileMenuOpen, setIsProfileMenuOpen] = useState(false);
   const profileMenuRef = useRef<HTMLDivElement>(null);
   
