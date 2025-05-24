@@ -1,4 +1,4 @@
-# Tradle - CFD Trading Journal
+# Tradle - AI powered CFD Trading Journal
 
 Tradle is a comprehensive CFD trading journal application that helps traders track, analyze, and improve their trading performance. The application uses AI (Google's Gemini) to analyze trade charts, extract trade data, and provide personalized insights.
 
@@ -41,7 +41,7 @@ Tradle is a comprehensive CFD trading journal application that helps traders tra
 
 1. Clone the repository
 ```
-git clone https://github.com/yourusername/tradle.git
+git clone https://github.com/oscarhelmet/tradle.git
 cd tradle
 ```
 
@@ -116,3 +116,7 @@ Contributions are welcome! Please feel free to submit a Pull Request.
 ## License
 
 This project is licensed under the MIT License - see the LICENSE file for details.
+
+## AI Declaration 
+
+This app is vibe coded with Anthropic Claude Sonnet 4 and Google Gemini 2.5 Pro 
