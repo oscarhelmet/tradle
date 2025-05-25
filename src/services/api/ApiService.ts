@@ -52,400 +52,258 @@ const defaultUser: User = {
 };
 
 class ApiService {
-  private token: string | null = null;
-  
-  /**
-   * Set the authentication token
-   * @param token - JWT token
-   */
-  setToken(token: string): void {
-    this.token = token;
-    localStorage.setItem('auth_token', token);
+  private baseURL: string;
+
+  constructor() {
+    this.baseURL = API_BASE_URL || 'http://localhost:5000/api';
   }
-  
+
   /**
-   * Get the authentication token
-   * @returns The JWT token or null if not authenticated
+   * Get authentication headers with Bearer token
    */
-  getToken(): string | null {
-    if (!this.token) {
-      this.token = localStorage.getItem('auth_token');
-    }
-    return this.token;
-  }
-  
-  /**
-   * Clear the authentication token
-   */
-  clearToken(): void {
-    this.token = null;
-    localStorage.removeItem('auth_token');
-  }
-  
-  /**
-   * Create headers for API requests
-   * @returns Headers object with authorization token if available
-   */
-  private createHeaders(): HeadersInit {
+  private getAuthHeaders(): HeadersInit {
+    const token = localStorage.getItem('token');
     const headers: HeadersInit = {
-      'Content-Type': 'application/json'
+      'Content-Type': 'application/json',
     };
-    
-    const token = this.getToken();
+
     if (token) {
-      headers['Authorization'] = `Bearer ${token}`;
+      // Ensure token is properly formatted as Bearer token
+      headers['Authorization'] = `Bearer ${token.replace('Bearer ', '')}`;
     }
-    
+
     return headers;
   }
-  
+
   /**
-   * Make a request to the API
-   * @param endpoint - API endpoint
-   * @param method - HTTP method
-   * @param body - Request body
-   * @returns Promise resolving to response data
+   * Make authenticated API request
    */
-  private async request<T>(endpoint: string, method: string = 'GET', body?: any): Promise<T> {
-    // For development, return mock data
-    if (process.env.NODE_ENV === 'development' && !process.env.REACT_APP_USE_REAL_API) {
-      return this.getMockData<T>(endpoint, method, body);
-    }
-    
-    const url = `${API_BASE_URL}${endpoint}`;
-    const options: RequestInit = {
-      method,
-      headers: this.createHeaders(),
-      body: body ? JSON.stringify(body) : undefined
-    };
-    
+  private async request<T>(
+    endpoint: string,
+    method: 'GET' | 'POST' | 'PUT' | 'DELETE' = 'GET',
+    data?: any,
+    customHeaders?: HeadersInit
+  ): Promise<T> {
     try {
-      const response = await fetch(url, options);
+      const url = `${this.baseURL}${endpoint}`;
       
-      if (!response.ok) {
-        const errorData = await response.json().catch(() => ({}));
-        throw new Error(errorData.message || `API request failed with status ${response.status}`);
+      // Get base auth headers
+      const authHeaders = this.getAuthHeaders();
+      
+      // Merge with custom headers, custom headers override auth headers
+      const headers = {
+        ...authHeaders,
+        ...customHeaders,
+      };
+
+      const config: RequestInit = {
+        method,
+        headers,
+      };
+
+      // Add body for POST/PUT requests
+      if (data && (method === 'POST' || method === 'PUT')) {
+        // If data is FormData, don't set Content-Type (let browser set it)
+        if (data instanceof FormData) {
+          delete headers['Content-Type'];
+          config.body = data;
+        } else {
+          config.body = JSON.stringify(data);
+        }
       }
-      
-      return await response.json();
+
+      console.log(`Making ${method} request to ${url}`, {
+        headers: headers,
+        hasToken: !!localStorage.getItem('token')
+      });
+
+      const response = await fetch(url, config);
+
+      // Handle different response types
+      const contentType = response.headers.get('content-type');
+      let responseData: any;
+
+      if (contentType && contentType.includes('application/json')) {
+        responseData = await response.json();
+      } else {
+        responseData = await response.text();
+      }
+
+      if (!response.ok) {
+        // Handle authentication errors
+        if (response.status === 401) {
+          console.error('Authentication failed, clearing local storage');
+          localStorage.removeItem('token');
+          localStorage.removeItem('user');
+          window.location.href = '/login';
+          throw new Error('Authentication failed');
+        }
+
+        // Handle other HTTP errors
+        const errorMessage = responseData?.error || responseData?.message || `HTTP error! status: ${response.status}`;
+        throw new Error(errorMessage);
+      }
+
+      return responseData;
     } catch (error) {
-      console.error('API request error:', error);
+      console.error(`API Request Error for ${endpoint}:`, error);
       throw error;
     }
   }
-  
+
   /**
-   * Get mock data for development
-   * @param endpoint - API endpoint
-   * @param method - HTTP method
-   * @param body - Request body
-   * @returns Mock data for the request
+   * Check if API is available and user is authenticated
    */
-  private getMockData<T>(endpoint: string, method: string, body?: any): Promise<T> {
-    // Simulate network delay
-    return new Promise((resolve) => {
-      setTimeout(() => {
-        // Auth endpoints
-        if (endpoint === '/auth/login') {
-          resolve({
-            user: defaultUser,
-            token: 'mock-jwt-token'
-          } as unknown as T);
-          return;
-        }
-        
-        if (endpoint === '/auth/register') {
-          resolve({
-            user: defaultUser,
-            token: 'mock-jwt-token'
-          } as unknown as T);
-          return;
-        }
-        
-        if (endpoint === '/auth/me') {
-          resolve(defaultUser as unknown as T);
-          return;
-        }
-        
-        // Trades endpoints
-        if (endpoint === '/trades' && method === 'GET') {
-          resolve(emptyTrades as unknown as T);
-          return;
-        }
-        
-        if (endpoint.match(/\/trades\/[\w-]+$/) && method === 'GET') {
-          // Since we have no mock trades, return a not found error
-          throw new Error('Trade not found');
-        }
-        
-        if (endpoint === '/trades' && method === 'POST') {
-          const newTrade = {
-            ...body,
-            id: Math.random().toString(36).substring(2, 15),
-            userId: defaultUser.id || '1',
-            createdAt: new Date(),
-            updatedAt: new Date()
-          };
-          
-          resolve(newTrade as unknown as T);
-          return;
-        }
-        
-        if (endpoint.match(/\/trades\/[\w-]+$/) && method === 'PUT') {
-          const id = endpoint.split('/').pop();
-          const updatedTrade = {
-            ...body,
-            id,
-            updatedAt: new Date()
-          };
-          
-          resolve(updatedTrade as unknown as T);
-          return;
-        }
-        
-        if (endpoint.match(/\/trades\/[\w-]+$/) && method === 'DELETE') {
-          resolve({ success: true } as unknown as T);
-          return;
-        }
-        
-        // Performance metrics
-        if (endpoint === '/metrics/performance') {
-          resolve(defaultPerformanceMetrics as unknown as T);
-          return;
-        }
-        
-        // Performance analysis
-        if (endpoint === '/analysis/performance' && method === 'POST') {
-          resolve({
-            analysis: 'Based on your trading history, you are just starting your trading journey. Since you have no trades recorded yet, this analysis will provide general guidance for new traders. Focus on developing a solid trading plan, practicing risk management, and maintaining detailed records of all your trades.',
-            strengths: [
-              'You are taking the right approach by using a trading journal',
-              'Starting with proper tracking and analysis tools',
-              'Commitment to learning and improvement'
-            ],
-            weaknesses: [
-              'No trading history to analyze yet',
-              'Need to establish consistent trading patterns',
-              'Risk management strategies need to be developed'
-            ],
-            recommendations: [
-              'Start with a demo account to practice your strategies',
-              'Develop a clear trading plan with entry and exit rules',
-              'Focus on risk management - never risk more than 1-2% per trade',
-              'Keep detailed notes on each trade to identify patterns',
-              'Study market analysis and technical indicators',
-              'Set realistic profit targets and stick to your plan'
-            ]
-          } as unknown as T);
-          return;
-        }
-        
-        // Reflection endpoints - Updated with complete AIReflection interface
-        if (endpoint.match(/\/reflection\/[\w-]+$/) && method === 'GET') {
-          const tradeId = endpoint.split('/').pop();
-          resolve({
-            id: 'mock-reflection-id',
-            tradeId: tradeId,
-            userId: defaultUser.id,
-            summary: 'This trade demonstrates good risk management principles with a clear entry and exit strategy.',
-            strengths: [
-              'Well-defined entry point based on technical analysis',
-              'Appropriate position sizing relative to account balance',
-              'Clear stop-loss placement to limit downside risk',
-              'Disciplined execution of the trading plan'
-            ],
-            weaknesses: [
-              'Could have held the position longer for greater profits',
-              'Entry timing could be improved with better market timing',
-              'Risk-reward ratio could be optimized further'
-            ],
-            suggestions: [
-              'Consider using trailing stops to capture more upside',
-              'Practice patience when waiting for optimal entry points',
-              'Review market conditions before entering trades',
-              'Keep detailed notes on what worked and what didn\'t',
-              'Continue studying technical analysis patterns'
-            ],
-            sentiment: 'positive' as const,
-            score: 7,
-            createdAt: new Date(),
-            updatedAt: new Date()
-          } as unknown as T);
-          return;
-        }
-        
-        if (endpoint.match(/\/reflection\/generate\/[\w-]+/) && method === 'POST') {
-          const tradeId = endpoint.split('/').pop()?.split('?')[0];
-          resolve({
-            id: 'mock-reflection-id',
-            tradeId: tradeId,
-            userId: defaultUser.id,
-            summary: 'This trade shows your developing understanding of market dynamics and risk management.',
-            strengths: [
-              'Good entry timing based on technical signals',
-              'Proper position sizing for your account level',
-              'Disciplined approach to following your trading plan',
-              'Effective use of stop-loss to manage risk'
-            ],
-            weaknesses: [
-              'Exit strategy could be more systematic',
-              'Market analysis could be more comprehensive',
-              'Emotional discipline needs continued development'
-            ],
-            suggestions: [
-              'Develop a more structured exit strategy',
-              'Study multiple timeframes before entering trades',
-              'Practice meditation or mindfulness to improve emotional control',
-              'Keep a detailed trading journal to track patterns',
-              'Consider paper trading to test new strategies'
-            ],
-            sentiment: 'positive' as const,
-            score: 6,
-            createdAt: new Date(),
-            updatedAt: new Date()
-          } as unknown as T);
-          return;
-        }
-        
-        // Default fallback
-        resolve({} as T);
-      }, 300);
-    });
+  async healthCheck(): Promise<boolean> {
+    try {
+      await this.request('/health');
+      return true;
+    } catch (error) {
+      console.error('Health check failed:', error);
+      return false;
+    }
   }
-  
-  // Auth methods
+
+  // Authentication methods
   
   /**
-   * Register a new user
-   * @param email - User email
-   * @param password - User password
-   * @param name - User name
-   * @param initialBalance - Initial trading balance (optional)
-   * @returns Promise resolving to user data and token
+   * User login
    */
-  async register(email: string, password: string, name: string, initialBalance?: number): Promise<{ user: User; token: string }> {
-    const data = await this.request<{ user: User; token: string }>('/auth/register', 'POST', { 
-      email, 
-      password, 
-      name,
-      initialBalance
-    });
-    this.setToken(data.token);
-    return data;
+  async login(credentials: { email: string; password: string }): Promise<{
+    user: User;
+    token: string;
+    success: boolean;
+  }> {
+    try {
+      const response = await fetch(`${this.baseURL}/auth/login`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify(credentials),
+      });
+
+      const data = await response.json();
+
+      if (!response.ok || !data.success) {
+        throw new Error(data.error || 'Login failed');
+      }
+
+      // Store token in localStorage
+      if (data.token) {
+        localStorage.setItem('token', data.token);
+        localStorage.setItem('user', JSON.stringify(data.user));
+      }
+
+      return data;
+    } catch (error) {
+      console.error('Login error:', error);
+      throw error;
+    }
   }
-  
+
   /**
-   * Login a user
-   * @param email - User email
-   * @param password - User password
-   * @returns Promise resolving to user data and token
+   * User registration
    */
-  async login(email: string, password: string): Promise<{ user: User; token: string }> {
-    const data = await this.request<{ user: User; token: string }>('/auth/login', 'POST', { email, password });
-    this.setToken(data.token);
-    return data;
+  async register(userData: {
+    email: string;
+    password: string;
+    firstName: string;
+    lastName: string;
+    initialBalance: number;
+  }): Promise<{
+    user: User;
+    token: string;
+    success: boolean;
+  }> {
+    try {
+      const response = await fetch(`${this.baseURL}/auth/register`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify(userData),
+      });
+
+      const data = await response.json();
+
+      if (!response.ok || !data.success) {
+        throw new Error(data.error || 'Registration failed');
+      }
+
+      // Store token in localStorage
+      if (data.token) {
+        localStorage.setItem('token', data.token);
+        localStorage.setItem('user', JSON.stringify(data.user));
+      }
+
+      return data;
+    } catch (error) {
+      console.error('Registration error:', error);
+      throw error;
+    }
   }
+
+  /**
+   * User logout
+   */
+  async logout(): Promise<void> {
+    try {
+      // Call logout endpoint if available
+      await this.request('/auth/logout', 'POST');
+    } catch (error) {
+      console.error('Logout error:', error);
+    } finally {
+      // Always clear local storage
+      localStorage.removeItem('token');
+      localStorage.removeItem('user');
+    }
+  }
+
+  /**
+   * Refresh authentication token
+   */
+  async refreshToken(): Promise<{ token: string; user: User }> {
+    const response = await this.request<{ token: string; user: User }>('/auth/refresh', 'POST');
+    
+    if (response.token) {
+      localStorage.setItem('token', response.token);
+      localStorage.setItem('user', JSON.stringify(response.user));
+    }
+    
+    return response;
+  }
+
+  // User methods
   
   /**
-   * Get the current user
-   * @returns Promise resolving to user data
+   * Get current user profile
    */
   async getCurrentUser(): Promise<User> {
     return this.request<User>('/auth/me');
   }
-  
+
   /**
    * Update user profile
-   * @param userData - User data to update
-   * @returns Promise resolving to updated user data
    */
   async updateUserProfile(userData: {
     firstName?: string;
     lastName?: string;
     initialBalance?: number;
   }): Promise<User> {
-    try {
-      const response = await this.request<any>('/auth/profile', 'PUT', userData);
-      
-      // If using mock data, simulate updating the user
-      if (process.env.NODE_ENV === 'development' && !process.env.REACT_APP_USE_REAL_API) {
-        const userStr = localStorage.getItem('user');
-        if (userStr) {
-          const user = JSON.parse(userStr) as User;
-          const updatedUser = {
-            ...user,
-            name: userData.firstName && userData.lastName ? 
-              `${userData.firstName} ${userData.lastName}` : user.name,
-            firstName: userData.firstName || user.firstName,
-            lastName: userData.lastName || user.lastName,
-            initialBalance: userData.initialBalance !== undefined ? 
-              userData.initialBalance : user.initialBalance,
-            updatedAt: new Date()
-          };
-          localStorage.setItem('user', JSON.stringify(updatedUser));
-          return updatedUser;
-        }
-      }
-      
-      // If the response is a User object, return it directly
-      if (response && response.id) {
-        return response;
-      }
-      
-      // If the response is an object with a 'data' property, return that
-      if (response && response.data) {
-        return response.data;
-      }
-      
-      throw new Error('Failed to update user profile');
-    } catch (error) {
-      console.error('Error updating user profile:', error);
-      throw error;
-    }
+    return this.request<User>('/auth/profile', 'PUT', userData);
   }
-  
+
   /**
    * Change user password
-   * @param passwordData - Password data
-   * @returns Promise resolving to success status
    */
-  async changePassword(passwordData: {
+  async changePassword(data: {
     currentPassword: string;
     newPassword: string;
   }): Promise<{ success: boolean }> {
-    try {
-      const response = await this.request<any>('/auth/password', 'PUT', passwordData);
-      
-      // If using mock data, simulate password change
-      if (process.env.NODE_ENV === 'development' && !process.env.REACT_APP_USE_REAL_API) {
-        return { success: true };
-      }
-      
-      // If the response already has a success property, return it
-      if (response && typeof response.success === 'boolean') {
-        return response;
-      }
-      
-      // If the response has a data property with success, return that
-      if (response && response.data && typeof response.data.success === 'boolean') {
-        return { success: response.data.success };
-      }
-      
-      // Otherwise, assume success if we got here
-      return { success: true };
-    } catch (error) {
-      console.error('Error changing password:', error);
-      throw error;
-    }
+    return this.request<{ success: boolean }>('/auth/change-password', 'PUT', data);
   }
-  
-  /**
-   * Logout the current user
-   */
-  logout(): void {
-    this.clearToken();
-  }
-  
+
   // Trade methods
   
   /**
@@ -639,7 +497,7 @@ class ApiService {
     
     // Upload to server
     const url = `${API_BASE_URL}/trades/upload`;
-    const token = this.getToken();
+    const token = localStorage.getItem('token');
     const headers: HeadersInit = {};
     
     if (token) {
@@ -808,7 +666,7 @@ class ApiService {
     
     // Upload to server for analysis
     const url = `${API_BASE_URL}/analysis/image`;
-    const token = this.getToken();
+    const token = localStorage.getItem('token');
     const headers: HeadersInit = {};
     
     if (token) {
@@ -867,7 +725,7 @@ class ApiService {
     
     // Upload to server for extraction
     const url = `${API_BASE_URL}/analysis/extract`;
-    const token = this.getToken();
+    const token = localStorage.getItem('token');
     const headers: HeadersInit = {};
     
     if (token) {

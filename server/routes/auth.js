@@ -1,143 +1,235 @@
 const express = require('express');
-const router = express.Router();
-const { check, validationResult } = require('express-validator');
+const bcrypt = require('bcryptjs');
+const jwt = require('jsonwebtoken');
+const { body, validationResult } = require('express-validator');
 const User = require('../models/User');
-const { protect } = require('../middleware/auth');
+const { protect, createUserSession, removeUserSession } = require('../middleware/auth');
+
+const router = express.Router();
+
+// Generate JWT token
+const generateToken = (id) => {
+  return jwt.sign({ id }, process.env.JWT_SECRET, {
+    expiresIn: '30m', // 30 minutes
+  });
+};
 
 /**
  * @route   POST /api/auth/register
  * @desc    Register a new user
  * @access  Public
  */
-router.post(
-  '/register',
-  [
-    check('name', 'Name is required').not().isEmpty(),
-    check('email', 'Please include a valid email').isEmail(),
-    check('password', 'Please enter a password with 6 or more characters').isLength({ min: 6 })
-  ],
-  async (req, res) => {
-    // Check for validation errors
+router.post('/register', [
+  body('email').isEmail().normalizeEmail(),
+  body('password').isLength({ min: 6 }),
+  body('firstName').trim().isLength({ min: 1 }),
+  body('lastName').trim().isLength({ min: 1 }),
+  body('initialBalance').isNumeric()
+], async (req, res) => {
+  try {
     const errors = validationResult(req);
     if (!errors.isEmpty()) {
-      return res.status(400).json({ success: false, errors: errors.array() });
-    }
-
-    const { name, email, password } = req.body;
-
-    try {
-      // Check if user already exists
-      let user = await User.findOne({ email });
-
-      if (user) {
-        return res.status(400).json({
-          success: false,
-          error: 'User already exists'
-        });
-      }
-
-      // Get initial balance if provided, or use default
-      const { initialBalance } = req.body;
-      
-      // Create new user
-      user = new User({
-        name,
-        email,
-        password,
-        initialBalance: initialBalance || undefined // Use model default if not provided
-      });
-
-      // Save user to database
-      await user.save();
-
-      // Generate JWT token
-      const token = user.getSignedJwtToken();
-
-      res.status(201).json({
-        success: true,
-        token,
-        user: {
-          id: user._id,
-          name: user.name,
-          email: user.email,
-          profileImage: user.profileImage,
-          initialBalance: user.initialBalance
-        }
-      });
-    } catch (err) {
-      console.error(err.message);
-      res.status(500).json({
+      return res.status(400).json({
         success: false,
-        error: 'Server error'
+        error: 'Validation failed',
+        details: errors.array()
       });
     }
+
+    const { email, password, firstName, lastName, initialBalance } = req.body;
+
+    // Check if user exists
+    const existingUser = await User.findOne({ email });
+    if (existingUser) {
+      return res.status(400).json({
+        success: false,
+        error: 'User already exists with this email'
+      });
+    }
+
+    // Hash password
+    const salt = await bcrypt.genSalt(10);
+    const hashedPassword = await bcrypt.hash(password, salt);
+
+    // Create user
+    const user = await User.create({
+      email,
+      password: hashedPassword,
+      name: `${firstName} ${lastName}`.trim(),
+      firstName,
+      lastName,
+      initialBalance: parseFloat(initialBalance)
+    });
+
+    // Generate token
+    const token = generateToken(user._id);
+
+    // Create session
+    const sessionId = createUserSession(user._id.toString(), token);
+
+    console.log(`User registered: ${email}, Session created: ${sessionId}`);
+
+    res.status(201).json({
+      success: true,
+      token,
+      user: {
+        id: user._id,
+        email: user.email,
+        name: user.name,
+        firstName: user.firstName,
+        lastName: user.lastName,
+        initialBalance: user.initialBalance,
+        createdAt: user.createdAt
+      },
+      sessionId
+    });
+  } catch (error) {
+    console.error('Registration error:', error);
+    res.status(500).json({
+      success: false,
+      error: 'Server error during registration'
+    });
   }
-);
+});
 
 /**
  * @route   POST /api/auth/login
  * @desc    Login user and get token
  * @access  Public
  */
-router.post(
-  '/login',
-  [
-    check('email', 'Please include a valid email').isEmail(),
-    check('password', 'Password is required').exists()
-  ],
-  async (req, res) => {
-    // Check for validation errors
+router.post('/login', [
+  body('email').isEmail().normalizeEmail(),
+  body('password').exists()
+], async (req, res) => {
+  try {
     const errors = validationResult(req);
     if (!errors.isEmpty()) {
-      return res.status(400).json({ success: false, errors: errors.array() });
+      return res.status(400).json({
+        success: false,
+        error: 'Invalid email or password format'
+      });
     }
 
     const { email, password } = req.body;
 
-    try {
-      // Check if user exists
-      const user = await User.findOne({ email }).select('+password');
-
-      if (!user) {
-        return res.status(401).json({
-          success: false,
-          error: 'Invalid credentials'
-        });
-      }
-
-      // Check if password matches
-      const isMatch = await user.matchPassword(password);
-
-      if (!isMatch) {
-        return res.status(401).json({
-          success: false,
-          error: 'Invalid credentials'
-        });
-      }
-
-      // Generate JWT token
-      const token = user.getSignedJwtToken();
-
-      res.json({
-        success: true,
-        token,
-        user: {
-          id: user._id,
-          name: user.name,
-          email: user.email,
-          profileImage: user.profileImage,
-          initialBalance: user.initialBalance
-        }
-      });
-    } catch (err) {
-      console.error(err.message);
-      res.status(500).json({
+    // Check for user
+    const user = await User.findOne({ email }).select('+password');
+    if (!user) {
+      return res.status(401).json({
         success: false,
-        error: 'Server error'
+        error: 'Invalid email or password'
       });
     }
+
+    // Check password
+    const isMatch = await bcrypt.compare(password, user.password);
+    if (!isMatch) {
+      return res.status(401).json({
+        success: false,
+        error: 'Invalid email or password'
+      });
+    }
+
+    // Generate token
+    const token = generateToken(user._id);
+
+    // Create session
+    const sessionId = createUserSession(user._id.toString(), token);
+
+    console.log(`User logged in: ${email}, Session created: ${sessionId}`);
+
+    res.json({
+      success: true,
+      token,
+      user: {
+        id: user._id,
+        email: user.email,
+        name: user.name,
+        firstName: user.firstName,
+        lastName: user.lastName,
+        initialBalance: user.initialBalance,
+        createdAt: user.createdAt
+      },
+      sessionId
+    });
+  } catch (error) {
+    console.error('Login error:', error);
+    res.status(500).json({
+      success: false,
+      error: 'Server error during login'
+    });
   }
-);
+});
+
+/**
+ * @route   POST /api/auth/logout
+ * @desc    Logout user
+ * @access  Private
+ */
+router.post('/logout', protect, async (req, res) => {
+  try {
+    // Remove session
+    if (req.sessionId) {
+      removeUserSession(req.sessionId);
+      console.log(`Session removed: ${req.sessionId} for user: ${req.user.email}`);
+    }
+
+    res.json({
+      success: true,
+      message: 'Logged out successfully'
+    });
+  } catch (error) {
+    console.error('Logout error:', error);
+    res.status(500).json({
+      success: false,
+      error: 'Server error during logout'
+    });
+  }
+});
+
+/**
+ * @route   POST /api/auth/refresh
+ * @desc    Refresh token
+ * @access  Private
+ */
+router.post('/refresh', protect, async (req, res) => {
+  try {
+    const user = req.user;
+
+    // Generate new token
+    const newToken = generateToken(user._id);
+
+    // Remove old session
+    if (req.sessionId) {
+      removeUserSession(req.sessionId);
+    }
+
+    // Create new session
+    const sessionId = createUserSession(user._id.toString(), newToken);
+
+    console.log(`Token refreshed for user: ${user.email}, New session: ${sessionId}`);
+
+    res.json({
+      success: true,
+      token: newToken,
+      user: {
+        id: user._id,
+        email: user.email,
+        name: user.name,
+        firstName: user.firstName,
+        lastName: user.lastName,
+        initialBalance: user.initialBalance
+      },
+      sessionId
+    });
+  } catch (error) {
+    console.error('Token refresh error:', error);
+    res.status(500).json({
+      success: false,
+      error: 'Server error during token refresh'
+    });
+  }
+});
 
 /**
  * @route   GET /api/auth/me
@@ -146,25 +238,25 @@ router.post(
  */
 router.get('/me', protect, async (req, res) => {
   try {
-    // Get user from database (excluding password)
-    const user = await User.findById(req.user.id);
-
+    const user = req.user;
+    
     res.json({
       success: true,
       user: {
         id: user._id,
-        name: user.name,
         email: user.email,
-        profileImage: user.profileImage,
+        name: user.name,
+        firstName: user.firstName,
+        lastName: user.lastName,
         initialBalance: user.initialBalance,
         createdAt: user.createdAt
       }
     });
-  } catch (err) {
-    console.error(err.message);
+  } catch (error) {
+    console.error('Get user error:', error);
     res.status(500).json({
       success: false,
-      error: 'Server error'
+      error: 'Server error fetching user data'
     });
   }
 });
@@ -174,77 +266,80 @@ router.get('/me', protect, async (req, res) => {
  * @desc    Update user profile
  * @access  Private
  */
-router.put('/profile', protect, async (req, res) => {
+router.put('/profile', protect, [
+  body('firstName').optional().trim().isLength({ min: 1 }),
+  body('lastName').optional().trim().isLength({ min: 1 }),
+  body('initialBalance').optional().isNumeric()
+], async (req, res) => {
   try {
-    const { firstName, lastName, initialBalance } = req.body;
-    
-    // Get user from database
-    const user = await User.findById(req.user.id);
-    
-    if (!user) {
-      return res.status(404).json({
+    const errors = validationResult(req);
+    if (!errors.isEmpty()) {
+      return res.status(400).json({
         success: false,
-        error: 'User not found'
+        error: 'Validation failed',
+        details: errors.array()
       });
     }
 
+    const { firstName, lastName, initialBalance } = req.body;
+    const user = req.user;
+
     // Update fields if provided
-    if (firstName || lastName) {
-      user.name = `${firstName || ''} ${lastName || ''}`.trim();
-    }
-    
-    if (initialBalance !== undefined) {
-      user.initialBalance = initialBalance;
+    if (firstName !== undefined) user.firstName = firstName;
+    if (lastName !== undefined) user.lastName = lastName;
+    if (initialBalance !== undefined) user.initialBalance = parseFloat(initialBalance);
+
+    // Update full name if first or last name changed
+    if (firstName !== undefined || lastName !== undefined) {
+      user.name = `${user.firstName} ${user.lastName}`.trim();
     }
 
-    // Save updated user
     await user.save();
 
     res.json({
       success: true,
       user: {
         id: user._id,
-        name: user.name,
-        firstName: firstName || user.name.split(' ')[0] || '',
-        lastName: lastName || user.name.split(' ').slice(1).join(' ') || '',
         email: user.email,
-        profileImage: user.profileImage,
-        initialBalance: user.initialBalance,
-        createdAt: user.createdAt,
-        updatedAt: user.updatedAt
+        name: user.name,
+        firstName: user.firstName,
+        lastName: user.lastName,
+        initialBalance: user.initialBalance
       }
     });
-  } catch (err) {
-    console.error(err.message);
+  } catch (error) {
+    console.error('Profile update error:', error);
     res.status(500).json({
       success: false,
-      error: 'Server error'
+      error: 'Server error updating profile'
     });
   }
 });
 
 /**
- * @route   PUT /api/auth/password
+ * @route   PUT /api/auth/change-password
  * @desc    Change user password
  * @access  Private
  */
-router.put('/password', protect, async (req, res) => {
+router.put('/change-password', protect, [
+  body('currentPassword').exists(),
+  body('newPassword').isLength({ min: 6 })
+], async (req, res) => {
   try {
-    const { currentPassword, newPassword } = req.body;
-    
-    // Get user from database with password
-    const user = await User.findById(req.user.id).select('+password');
-    
-    if (!user) {
-      return res.status(404).json({
+    const errors = validationResult(req);
+    if (!errors.isEmpty()) {
+      return res.status(400).json({
         success: false,
-        error: 'User not found'
+        error: 'Validation failed',
+        details: errors.array()
       });
     }
 
-    // Check if current password matches
-    const isMatch = await user.matchPassword(currentPassword);
-    
+    const { currentPassword, newPassword } = req.body;
+    const user = await User.findById(req.user._id).select('+password');
+
+    // Check current password
+    const isMatch = await bcrypt.compare(currentPassword, user.password);
     if (!isMatch) {
       return res.status(400).json({
         success: false,
@@ -252,19 +347,20 @@ router.put('/password', protect, async (req, res) => {
       });
     }
 
-    // Update password
-    user.password = newPassword;
+    // Hash new password
+    const salt = await bcrypt.genSalt(10);
+    user.password = await bcrypt.hash(newPassword, salt);
     await user.save();
 
     res.json({
       success: true,
-      message: 'Password updated successfully'
+      message: 'Password changed successfully'
     });
-  } catch (err) {
-    console.error(err.message);
+  } catch (error) {
+    console.error('Password change error:', error);
     res.status(500).json({
       success: false,
-      error: 'Server error'
+      error: 'Server error changing password'
     });
   }
 });
