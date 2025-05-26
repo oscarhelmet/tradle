@@ -1,57 +1,117 @@
 const express = require('express');
 const router = express.Router();
 const TradeEntry = require('../models/TradeEntry');
+const User = require('../models/User');
 const { protect } = require('../middleware/auth');
 
 /**
  * @route   GET /api/metrics/summary
- * @desc    Get overall trading metrics summary
+ * @desc    Get comprehensive trading metrics
  * @access  Private
  */
 router.get('/summary', protect, async (req, res) => {
   try {
-    // Get query parameters for filtering
-    const { 
-      instrumentType, 
-      instrumentName, 
-      startDate,
-      endDate,
-      timeframe
-    } = req.query;
-
-    // Get user for initial balance
-    const User = require('../models/User');
+    // Get user's initial balance
     const user = await User.findById(req.user.id);
+    const initialBalance = user.initialBalance || 10000;
 
-    // Build filter object
-    const filter = { userId: req.user.id };
-    
-    if (instrumentType) filter.instrumentType = instrumentType;
-    if (instrumentName) filter.instrumentName = { $regex: instrumentName, $options: 'i' };
-    if (timeframe) filter.timeframe = timeframe;
-    
-    // Date range filter
-    if (startDate || endDate) {
-      filter.tradeDate = {};
-      if (startDate) filter.tradeDate.$gte = new Date(startDate);
-      if (endDate) filter.tradeDate.$lte = new Date(endDate);
+    // Get all trades for the user
+    const trades = await TradeEntry.find({ userId: req.user.id }).sort({ tradeDate: 1 });
+
+    if (trades.length === 0) {
+      return res.json({
+        success: true,
+        data: {
+          totalTrades: 0,
+          winningTrades: 0,
+          losingTrades: 0,
+          breakEvenTrades: 0,
+          winRate: 0,
+          totalProfit: 0,
+          totalLoss: 0,
+          netProfitLoss: 0,
+          profitFactor: 0,
+          averageWin: 0,
+          averageLoss: 0,
+          largestWin: 0,
+          largestLoss: 0,
+          averageRRR: 0,
+          averageHoldingTime: 0,
+          initialBalance,
+          currentBalance: initialBalance,
+          totalProfitLossPercentage: 0
+        }
+      });
     }
 
-    // Get all trades matching the filter
-    const trades = await TradeEntry.find(filter);
+    // Calculate basic metrics
+    const totalTrades = trades.length;
+    const winningTrades = trades.filter(trade => trade.profitLoss > 0);
+    const losingTrades = trades.filter(trade => trade.profitLoss < 0);
+    const breakEvenTrades = trades.filter(trade => trade.profitLoss === 0);
 
-    // Calculate metrics
-    const metrics = calculateMetrics(trades);
+    const winRate = (winningTrades.length / totalTrades) * 100;
+
+    const totalProfit = winningTrades.reduce((sum, trade) => sum + trade.profitLoss, 0);
+    const totalLoss = Math.abs(losingTrades.reduce((sum, trade) => sum + trade.profitLoss, 0));
+    const netProfitLoss = trades.reduce((sum, trade) => sum + trade.profitLoss, 0);
+
+    // Calculate current balance
+    const currentBalance = initialBalance + netProfitLoss;
+
+    // Calculate total profit/loss percentage based on initial balance
+    const totalProfitLossPercentage = (netProfitLoss / initialBalance) * 100;
+
+    const profitFactor = totalLoss > 0 ? totalProfit / totalLoss : totalProfit > 0 ? 999 : 0;
+
+    const averageWin = winningTrades.length > 0 ? totalProfit / winningTrades.length : 0;
+    const averageLoss = losingTrades.length > 0 ? totalLoss / losingTrades.length : 0;
+
+    const largestWin = winningTrades.length > 0 ? Math.max(...winningTrades.map(t => t.profitLoss)) : 0;
+    const largestLoss = losingTrades.length > 0 ? Math.min(...losingTrades.map(t => t.profitLoss)) : 0;
+
+    // Calculate average risk-reward ratio
+    const tradesWithRRR = trades.filter(trade => trade.riskRewardRatio && trade.riskRewardRatio > 0);
+    const averageRRR = tradesWithRRR.length > 0 
+      ? tradesWithRRR.reduce((sum, trade) => sum + trade.riskRewardRatio, 0) / tradesWithRRR.length 
+      : 0;
+
+    // Calculate average holding time
+    const tradesWithDuration = trades.filter(trade => trade.entryDate && trade.exitDate);
+    let averageHoldingTime = 0;
+    if (tradesWithDuration.length > 0) {
+      const totalHoldingTimeMs = tradesWithDuration.reduce((sum, trade) => {
+        const duration = new Date(trade.exitDate).getTime() - new Date(trade.entryDate).getTime();
+        return sum + duration;
+      }, 0);
+      averageHoldingTime = totalHoldingTimeMs / tradesWithDuration.length;
+    }
 
     res.json({
       success: true,
       data: {
-        ...metrics,
-        initialBalance: user ? user.initialBalance : 10000
+        totalTrades,
+        winningTrades: winningTrades.length,
+        losingTrades: losingTrades.length,
+        breakEvenTrades: breakEvenTrades.length,
+        winRate: Math.round(winRate * 100) / 100,
+        totalProfit: Math.round(totalProfit * 100) / 100,
+        totalLoss: Math.round(totalLoss * 100) / 100,
+        netProfitLoss: Math.round(netProfitLoss * 100) / 100,
+        profitFactor: Math.round(profitFactor * 100) / 100,
+        averageWin: Math.round(averageWin * 100) / 100,
+        averageLoss: Math.round(averageLoss * 100) / 100,
+        largestWin: Math.round(largestWin * 100) / 100,
+        largestLoss: Math.round(largestLoss * 100) / 100,
+        averageRRR: Math.round(averageRRR * 100) / 100,
+        averageHoldingTime: Math.round(averageHoldingTime),
+        initialBalance: Math.round(initialBalance * 100) / 100,
+        currentBalance: Math.round(currentBalance * 100) / 100,
+        totalProfitLossPercentage: Math.round(totalProfitLossPercentage * 100) / 100
       }
     });
   } catch (err) {
-    console.error(err.message);
+    console.error('Metrics summary error:', err.message);
     res.status(500).json({
       success: false,
       error: 'Server error'

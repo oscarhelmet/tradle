@@ -2,538 +2,723 @@
  * Gemini API Service for image analysis and trade insights
  */
 
-const axios = require('axios');
-const fs = require('fs');
-// const path = require('path');
+const { GoogleGenAI } = require('@google/genai');
+const { calculateProfitLossPercentage } = require('../utils/tradeCalculations');
 
-// // Gemini API configuration
-// const GEMINI_API_URL = 'https://generativelanguage.googleapis.com/v1beta/models';
-// const GEMINI_VISION_MODEL = 'gemini-pro-vision';
-// const GEMINI_TEXT_MODEL = 'gemini-pro';
-
-/**
- * Analyze a trade chart image using Gemini API
- * @param {String} imagePath - Path to the image file
- * @returns {Object} - Analysis results
- */
-async function analyzeTradeImage(imagePath) {
-  try {
-    // Check if Gemini API key is available
+class GeminiService {
+  constructor() {
     if (!process.env.GEMINI_API_KEY) {
-      console.warn('Gemini API key not found. Using mock analysis.');
-      return generateMockAnalysis();
+      console.warn('GEMINI_API_KEY not found in environment variables');
+      this.client = null;
+      return;
     }
 
-    // Read image file as base64
-    const imageBuffer = fs.readFileSync(imagePath);
-    const base64Image = imageBuffer.toString('base64');
-
-    // Prepare request to Gemini API
-    const response = await axios.post(
-      `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash:generateContent?key=${process.env.GEMINI_API_KEY}`,
-      {
-        contents: [
-          {
-            parts: [
-              {
-                text: "Analyze this trading chart image. Identify the instrument (Must be one of [STOCK,FOREX,CRYPTO,FUTURES,OPTIONS,OTHER]), trend direction, key support/resistance levels, and any notable patterns. Provide insights on the trade setup and potential entry/exit points."
-              },
-              {
-                inline_data: {
-                  mime_type: "image/jpeg",
-                  data: base64Image
-                }
-              }
-            ]
-          }
-        ],
-        generationConfig: {
-          temperature: 0.4,
-          topK: 32,
-          topP: 1,
-          maxOutputTokens: 1024
-        }
-      },
-      {
-        headers: {
-          'Content-Type': 'application/json'
-        }
-      }
-    );
-
-    // Extract and return the analysis
-    if (response.data && 
-        response.data.candidates && 
-        response.data.candidates[0] && 
-        response.data.candidates[0].content && 
-        response.data.candidates[0].content.parts && 
-        response.data.candidates[0].content.parts[0]) {
-      return {
-        analysis: response.data.candidates[0].content.parts[0].text,
-        success: true
-      };
-    } else {
-      console.error('Unexpected Gemini API response format:', response.data);
-      return generateMockAnalysis();
+    try {
+      this.client = new GoogleGenAI({
+        apiKey: process.env.GEMINI_API_KEY
+      });
+      console.log('✓ Gemini AI service initialized');
+    } catch (error) {
+      console.error('✗ Failed to initialize Gemini AI service:', error.message);
+      this.client = null;
     }
-  } catch (error) {
-    console.error('Error analyzing image with Gemini API:', error);
-    return generateMockAnalysis();
   }
-}
 
-/**
- * Generate trade insights based on trade data using Gemini API
- * @param {Object} tradeData - Trade data object
- * @returns {Object} - Insights results
- */
-async function generateTradeInsights(tradeData) {
-  try {
-    // Check if Gemini API key is available
-    if (!process.env.GEMINI_API_KEY) {
-      console.warn('Gemini API key not found. Using mock insights.');
-      return {
-        insights: "This appears to be a well-executed trade with proper risk management. The entry point was at a key support level, and the exit captured a significant portion of the move. Consider setting a trailing stop to potentially capture more profit in similar setups.",
-        success: true
-      };
-    }
-
-    // Prepare trade data for analysis
-    const tradePrompt = `
-      Analyze this trade and provide insights:
-      
-      Instrument: ${tradeData.instrumentType} - ${tradeData.instrumentName}
-      Direction: ${tradeData.direction}
-      Entry Price: ${tradeData.entryPrice}
-      Exit Price: ${tradeData.exitPrice}
-      Profit/Loss: ${tradeData.profitLoss} (${tradeData.profitLossPercentage}%)
-      ${tradeData.stopLoss ? `Stop Loss: ${tradeData.stopLoss}` : ''}
-      ${tradeData.takeProfit ? `Take Profit: ${tradeData.takeProfit}` : ''}
-      ${tradeData.riskRewardRatio ? `Risk/Reward Ratio: ${tradeData.riskRewardRatio}` : ''}
-      ${tradeData.notes ? `Trader Notes: ${tradeData.notes}` : ''}
-      
-      Provide a concise analysis of this trade, including strengths, weaknesses, and suggestions for improvement.
-    `;
-
-    // Call Gemini API
-    const response = await axios.post(
-      `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash:generateContent?key=${process.env.GEMINI_API_KEY}`,
-      {
-        contents: [
-          {
-            parts: [
-              {
-                text: tradePrompt
-              }
-            ]
-          }
-        ],
-        generationConfig: {
-          temperature: 0.4,
-          topK: 32,
-          topP: 1,
-          maxOutputTokens: 1024
-        }
-      },
-      {
-        headers: {
-          'Content-Type': 'application/json'
-        }
-      }
-    );
-
-    // Extract and return the insights
-    if (response.data && 
-        response.data.candidates && 
-        response.data.candidates[0] && 
-        response.data.candidates[0].content && 
-        response.data.candidates[0].content.parts && 
-        response.data.candidates[0].content.parts[0]) {
-      return {
-        insights: response.data.candidates[0].content.parts[0].text,
-        success: true
-      };
-    } else {
-      console.error('Unexpected Gemini API response format:', response.data);
-      return {
-        insights: "Unable to generate insights due to API response format issue. Please try again later.",
-        success: false
-      };
-    }
-  } catch (error) {
-    console.error('Error generating insights with Gemini API:', error);
-    return {
-      insights: "Unable to generate insights due to an API error. Please try again later.",
-      success: false
-    };
+  /**
+   * Check if Gemini service is available
+   */
+  isAvailable() {
+    return this.client !== null;
   }
-}
 
-/**
- * Generate mock analysis for development/testing
- * @returns {Object} - Mock analysis results
- */
-function generateMockAnalysis() {
-  return {
-    analysis: `
-      Chart Analysis:
-      
-      Instrument: Appears to be a forex pair or cryptocurrency chart
-      Timeframe: Likely 1-hour or 4-hour chart
-      
-      Trend Analysis:
-      - The overall trend appears to be bullish in the short term
-      - Price is trading above the 20-period moving average
-      - There's a series of higher highs and higher lows forming
-      
-      Key Levels:
-      - Support: There's a strong support level around the recent swing low
-      - Resistance: A key resistance level is visible at the recent swing high
-      - The price recently broke above a previous resistance level, which may now act as support
-      
-      Pattern Recognition:
-      - A bullish flag pattern appears to have formed recently
-      - Volume is increasing on upward moves, confirming the bullish momentum
-      
-      Trade Setup:
-      - Entry: A potential entry would be on a pullback to the newly formed support
-      - Stop Loss: Below the most recent swing low
-      - Take Profit: The next resistance level or a 1:2 risk-reward ratio
-      
-      Additional Insights:
-      - RSI indicator shows the asset is not yet overbought
-      - Consider trailing your stop loss to lock in profits as the trade moves in your favor
-    `,
-    success: true
-  };
-}
-
-/**
- * Extract trade data from a chart image using Gemini API
- * @param {String} imagePath - Path to the image file
- * @returns {Object} - Extracted trade data
- */
-async function extractTradeData(imagePath) {
-  try {
-    // Check if Gemini API key is available
-    if (!process.env.GEMINI_API_KEY) {
-      console.warn('Gemini API key not found. Using mock data extraction.');
-      return generateMockTradeData();
+  /**
+   * Generate content using Gemini
+   */
+  async generateContent(prompt, config = {}) {
+    if (!this.isAvailable()) {
+      throw new Error('Gemini service is not available');
     }
 
-    // Read image file as base64
-    const imageBuffer = fs.readFileSync(imagePath);
-    const base64Image = imageBuffer.toString('base64');
-
-    // Prepare request to Gemini API
-    const response = await axios.post(
-      `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash:generateContent?key=${process.env.GEMINI_API_KEY}`,
-      {
-        contents: [
-          {
-            parts: [
-              {
-                text: "Analyze this trading chart image and extract ONLY the following information in JSON format:\n\n1. instrument type (FOREX, STOCK, CRYPTO, etc.)\n2. instrument name\n3. trade direction (LONG or SHORT)\n4. entry price\n5. exit price\n6. position size (in lots or units)\n7. actual profit/loss (in currency, NOT pips)\n\nIMPORTANT: For profit/loss, make sure to extract the ACTUAL monetary value, not pips. If the image shows both pips and monetary value, use the monetary value. Position size should be in lots (for forex) or units (for stocks/crypto).\n\nFormat your response as a valid JSON object with the following structure: {\"instrumentType\": string, \"instrumentName\": string, \"direction\": string, \"entryPrice\": number, \"exitPrice\": number, \"profitLoss\": number, \"positionSize\": number}. Do not include any explanations or analysis, just the JSON object."
-              },
-              {
-                inline_data: {
-                  mime_type: "image/jpeg",
-                  data: base64Image
-                }
-              }
-            ]
-          }
-        ],
-        generationConfig: {
-          temperature: 0.1,
+    try {
+      const defaultConfig = {
+        model: 'gemini-2.0-flash-exp',
+        contents: prompt,
+        config: {
+          temperature: 0.7,
+          maxOutputTokens: 2048,
+          topP: 0.9,
           topK: 40,
-          topP: 0.95,
-          maxOutputTokens: 1024,
+          ...config
         }
-      },
-      {
-        headers: {
-          'Content-Type': 'application/json'
-        }
-      }
-    );
+      };
 
-    // Extract and parse the JSON response
-    if (response.data && 
-        response.data.candidates && 
-        response.data.candidates[0] && 
-        response.data.candidates[0].content && 
-        response.data.candidates[0].content.parts && 
-        response.data.candidates[0].content.parts[0]) {
+      console.log('Generating content with Gemini:', {
+        model: defaultConfig.model,
+        promptLength: prompt.length,
+        config: defaultConfig.config
+      });
+
+      const response = await this.client.models.generateContent(defaultConfig);
       
-      const text = response.data.candidates[0].content.parts[0].text;
-      
-      try {
-        // Try to parse the JSON response
-        const jsonMatch = text.match(/\{[\s\S]*\}/);
-        if (jsonMatch) {
-          const parsedData = JSON.parse(jsonMatch[0]);
-          return {
-            instrumentType: parsedData.instrumentType || 'FOREX',
-            instrumentName: parsedData.instrumentName || 'EUR/USD',
-            direction: parsedData.direction || 'LONG',
-            entryPrice: parsedData.entryPrice || 1.0850,
-            exitPrice: parsedData.exitPrice || 1.0950,
-            profitLoss: parsedData.profitLoss || 100,
-            positionSize: parsedData.positionSize || 1.0,
-            success: true
-          };
-        }
-      } catch (parseError) {
-        console.error('Error parsing Gemini response:', parseError);
-      }
-      
-      return generateMockTradeData();
-    } else {
-      console.error('Unexpected Gemini API response format:', response.data);
-      return generateMockTradeData();
+      return {
+        success: true,
+        text: response.text,
+        candidates: response.candidates,
+        usageMetadata: response.usageMetadata
+      };
+    } catch (error) {
+      console.error('Gemini API error:', error);
+      throw new Error(`Gemini generation failed: ${error.message}`);
     }
-  } catch (error) {
-    console.error('Error extracting trade data with Gemini API:', error);
-    return generateMockTradeData();
   }
-}
 
-/**
- * Generate mock trade data for development/testing
- * @returns {Object} - Mock trade data
- */
-function generateMockTradeData() {
-  return {
-    instrumentType: 'FOREX',
-    instrumentName: 'EUR/USD',
-    direction: 'LONG',
-    entryPrice: 1.0850,
-    exitPrice: 1.0920,
-    profitLoss: 70,
-    positionSize: 1.0,
-    success: true
-  };
-}
-
-/**
- * Analyze trading performance based on trade history
- * @param {Array} trades - Array of trade entries
- * @param {String} userId - User ID
- * @returns {Object} - Performance analysis results
- */
-async function analyzePerformance(trades, userId) {
-  try {
-    // Check if Gemini API key is available
-    if (!process.env.GEMINI_API_KEY) {
-      console.warn('Gemini API key not found. Using mock performance analysis.');
-      return generateMockPerformanceAnalysis(trades);
+  /**
+   * Generate content from image using Files API (recommended for production)
+   */
+  async generateContentFromImage(imageBuffer, mimeType, prompt, config = {}) {
+    if (!this.isAvailable()) {
+      throw new Error('Gemini service is not available');
     }
 
-    // Prepare trade data summary for analysis
-    const tradesSummary = trades.map(trade => ({
-      instrumentType: trade.instrumentType,
-      instrumentName: trade.instrumentName,
-      direction: trade.direction,
-      profitLoss: trade.profitLoss,
-      profitLossPercentage: trade.profitLossPercentage,
-      entryDate: trade.entryDate,
-      exitDate: trade.exitDate,
-      riskRewardRatio: trade.riskRewardRatio || 'N/A'
-    }));
+    try {
+      console.log('Uploading image to Gemini Files API...');
+      
+      // Upload image to Gemini Files API
+      const uploadedFile = await this.client.files.upload({
+        file: imageBuffer,
+        config: { mimeType }
+      });
 
-    // Calculate some basic metrics to include in the prompt
-    const totalTrades = trades.length;
-    const winningTrades = trades.filter(t => t.profitLoss > 0).length;
-    const losingTrades = trades.filter(t => t.profitLoss < 0).length;
-    const winRate = totalTrades > 0 ? (winningTrades / totalTrades) * 100 : 0;
-    const totalProfit = trades.filter(t => t.profitLoss > 0).reduce((sum, t) => sum + t.profitLoss, 0);
-    const totalLoss = Math.abs(trades.filter(t => t.profitLoss < 0).reduce((sum, t) => sum + t.profitLoss, 0));
-    const profitFactor = totalLoss > 0 ? totalProfit / totalLoss : totalProfit > 0 ? Infinity : 0;
+      console.log('Image uploaded to Gemini:', uploadedFile.name);
 
-    const prompt = `
-      Analyze the performance of a trader based on their trading history and provide insights.
-      
-      Performance Metrics:
-      - Total Trades: ${totalTrades}
-      - Winning Trades: ${winningTrades}
-      - Losing Trades: ${losingTrades}
-      - Win Rate: ${winRate.toFixed(2)}%
-      - Total Profit: ${totalProfit.toFixed(2)}
-      - Total Loss: ${totalLoss.toFixed(2)}
-      - Profit Factor: ${profitFactor.toFixed(2)}
-      
-      Trade History:
-      ${JSON.stringify(tradesSummary, null, 2)}
-      
-      Provide a comprehensive analysis of the trading performance in this format:
-      1. A detailed analysis paragraph (200-300 words)
-      2. A list of 3-5 strengths (bullet points)
-      3. A list of 3-5 weaknesses or areas for improvement (bullet points)
-      4. A list of 3-5 specific recommendations for improving performance (bullet points)
-      
-      Format your response as a valid JSON object with the following structure:
-      {
-        "analysis": "string",
-        "strengths": ["string", "string", ...],
-        "weaknesses": ["string", "string", ...],
-        "recommendations": ["string", "string", ...]
-      }
-    `;
-
-    // Call Gemini API
-    const response = await axios.post(
-      `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash:generateContent?key=${process.env.GEMINI_API_KEY}`,
-      {
+      // Generate content with image
+      const response = await this.client.models.generateContent({
+        model: 'gemini-2.0-flash-exp',
         contents: [
           {
+            role: 'user',
             parts: [
-              {
-                text: prompt
+              { text: prompt },
+              { 
+                fileData: {
+                  fileUri: uploadedFile.uri,
+                  mimeType: uploadedFile.mimeType
+                }
               }
             ]
           }
         ],
-        generationConfig: {
-          temperature: 0.4,
-          topK: 32,
-          topP: 1,
-          maxOutputTokens: 2048
+        config: {
+          temperature: 0.1, // Lower temperature for better accuracy
+          maxOutputTokens: 4096,
+          ...config
         }
-      },
-      {
-        headers: {
-          'Content-Type': 'application/json'
-        }
-      }
-    );
+      });
 
-    // Extract and parse the response
-    if (response.data && 
-        response.data.candidates && 
-        response.data.candidates[0] && 
-        response.data.candidates[0].content && 
-        response.data.candidates[0].content.parts && 
-        response.data.candidates[0].content.parts[0]) {
+      // Clean up uploaded file
+      try {
+        await this.client.files.delete({ name: uploadedFile.name });
+        console.log('Cleaned up uploaded file from Gemini');
+      } catch (deleteError) {
+        console.warn('Failed to delete uploaded file:', deleteError.message);
+      }
+
+      return {
+        success: true,
+        text: response.text,
+        candidates: response.candidates,
+        usageMetadata: response.usageMetadata
+      };
+  } catch (error) {
+      console.error('Gemini image analysis error:', error);
+      throw new Error(`Gemini image analysis failed: ${error.message}`);
+  }
+}
+
+/**
+   * Generate content from image using inline data (for smaller images)
+   */
+  async generateContentFromImageInline(imageBuffer, mimeType, prompt, config = {}) {
+    if (!this.isAvailable()) {
+      throw new Error('Gemini service is not available');
+    }
+
+    try {
+      console.log('Analyzing image with inline data...');
       
-      const text = response.data.candidates[0].content.parts[0].text;
+      // Convert image buffer to base64
+      const base64Image = imageBuffer.toString('base64');
+
+      // Generate content with inline image
+      const response = await this.client.models.generateContent({
+        model: 'gemini-2.0-flash-exp',
+        contents: [
+          {
+            role: 'user',
+            parts: [
+              { text: prompt },
+              {
+                inlineData: {
+                  mimeType: mimeType,
+                  data: base64Image
+                }
+              }
+            ]
+          }
+        ],
+        config: {
+          temperature: 0.1,
+          maxOutputTokens: 4096,
+          ...config
+        }
+      });
+
+      return {
+        success: true,
+        text: response.text,
+        candidates: response.candidates,
+        usageMetadata: response.usageMetadata
+      };
+  } catch (error) {
+      console.error('Gemini inline image analysis error:', error);
+      throw new Error(`Gemini inline image analysis failed: ${error.message}`);
+  }
+}
+
+/**
+   * Generate structured JSON response with image
+   */
+  async generateStructuredContentWithImage(imageBuffer, mimeType, prompt, schema, config = {}) {
+    if (!this.isAvailable()) {
+      throw new Error('Gemini service is not available');
+    }
+
+    try {
+      // Determine whether to use Files API or inline data based on image size
+      const imageSizeMB = imageBuffer.length / (1024 * 1024);
+      const useFilesAPI = imageSizeMB > 15;
+
+      let response;
+
+      if (useFilesAPI) {
+        console.log(`Image size: ${imageSizeMB.toFixed(2)}MB - Using Files API`);
+        
+        const uploadedFile = await this.client.files.upload({
+          file: imageBuffer,
+          config: { mimeType }
+        });
+
+        response = await this.client.models.generateContent({
+          model: 'gemini-2.0-flash-exp',
+          contents: [
+            {
+              role: 'user',
+              parts: [
+                { text: prompt },
+                { 
+                  fileData: {
+                    fileUri: uploadedFile.uri,
+                    mimeType: uploadedFile.mimeType
+                  }
+                }
+              ]
+            }
+          ],
+          config: {
+            responseMimeType: 'application/json',
+            responseSchema: schema,
+            temperature: 0.05,
+            maxOutputTokens: 4096,
+            ...config
+          }
+        });
+
+        // Clean up uploaded file
+        try {
+          await this.client.files.delete({ name: uploadedFile.name });
+        } catch (deleteError) {
+          console.warn('Failed to delete uploaded file:', deleteError.message);
+        }
+      } else {
+        console.log(`Image size: ${imageSizeMB.toFixed(2)}MB - Using inline data`);
+        
+    const base64Image = imageBuffer.toString('base64');
+
+        response = await this.client.models.generateContent({
+          model: 'gemini-2.0-flash-exp',
+        contents: [
+          {
+              role: 'user',
+            parts: [
+                { text: prompt },
+                {
+                  inlineData: {
+                    mimeType: mimeType,
+                  data: base64Image
+                }
+              }
+            ]
+          }
+        ],
+          config: {
+            responseMimeType: 'application/json',
+            responseSchema: schema,
+            temperature: 0.05,
+            maxOutputTokens: 4096,
+            ...config
+          }
+        });
+      }
+
+      console.log('Raw Gemini response text:', response.text);
+
+      // Better JSON parsing with multiple fallback strategies
+      let parsedData;
       
       try {
-        // Try to parse the JSON response
-        const jsonMatch = text.match(/\{[\s\S]*\}/);
-        if (jsonMatch) {
-          const parsedData = JSON.parse(jsonMatch[0]);
-          return {
-            analysis: parsedData.analysis || "",
-            strengths: parsedData.strengths || [],
-            weaknesses: parsedData.weaknesses || [],
-            recommendations: parsedData.recommendations || [],
-            success: true
-          };
-        }
+        // First attempt: direct JSON parse
+        parsedData = JSON.parse(response.text);
+        console.log('Successfully parsed JSON directly');
       } catch (parseError) {
-        console.error('Error parsing Gemini response:', parseError);
+        console.warn('Direct JSON parse failed, trying fallback strategies...');
+        
+        try {
+          // Second attempt: Clean and extract JSON array
+          let cleanText = response.text.trim();
+          
+          // Remove any markdown code blocks
+          cleanText = cleanText.replace(/```json\s*/g, '').replace(/```\s*/g, '');
+          
+          // Extract array from text
+          const arrayMatch = cleanText.match(/\[[\s\S]*?\]/);
+          if (arrayMatch) {
+            parsedData = JSON.parse(arrayMatch[0]);
+            console.log('Successfully extracted JSON array from response');
+          } else {
+            throw new Error('No JSON array found in response');
+          }
+        } catch (extractError) {
+          console.error('All JSON parsing strategies failed:', extractError);
+          // Return empty array as fallback
+          parsedData = [];
+        }
       }
+
+      // Validate and clean the parsed data
+      if (Array.isArray(parsedData)) {
+        parsedData = parsedData.map(trade => this.cleanTradeData(trade));
+      }
+
+      return {
+        success: true,
+        data: parsedData,
+        text: response.text,
+        candidates: response.candidates,
+        usageMetadata: response.usageMetadata
+      };
+  } catch (error) {
+      console.error('Gemini structured image generation error:', error);
+      throw new Error(`Gemini structured image generation failed: ${error.message}`);
+  }
+}
+
+/**
+   * Clean and validate trade data from Gemini response
+   */
+  cleanTradeData(trade) {
+    const cleaned = {};
+    
+    // Clean each field individually
+    Object.keys(trade).forEach(key => {
+      let value = trade[key];
+      
+      // Handle corrupted string values that contain JSON
+      if (typeof value === 'string' && value.includes('"')) {
+        // Try to extract just the first part before any JSON corruption
+        const firstPart = value.split('",')[0].replace(/"/g, '');
+        if (firstPart && firstPart !== value) {
+          console.warn(`Cleaning corrupted field ${key}: "${value}" -> "${firstPart}"`);
+          value = firstPart;
+        }
+      }
+      
+      // Type-specific cleaning
+      switch (key) {
+        case 'entryPrice':
+        case 'exitPrice':
+        case 'stopLoss':
+        case 'takeProfit':
+        case 'quantity':
+        case 'positionSize':
+        case 'profitLoss':
+        case 'profitLossPercentage':
+          cleaned[key] = value ? parseFloat(value) : 0;
+          break;
+          
+        case 'entryDate':
+        case 'exitDate':
+        case 'tradeDate':
+          if (value) {
+            // Ensure it's a valid ISO date string
+            try {
+              const date = new Date(value);
+              if (!isNaN(date.getTime())) {
+                cleaned[key] = date.toISOString();
+              } else {
+                // Fallback to current date
+                cleaned[key] = new Date().toISOString();
+              }
+            } catch (dateError) {
+              cleaned[key] = new Date().toISOString();
+            }
+          }
+          break;
+          
+        case 'tags':
+          cleaned[key] = Array.isArray(value) ? value : [];
+          break;
+          
+        case 'notes':
+        case 'duration':
+          cleaned[key] = typeof value === 'string' ? value : '';
+          break;
+          
+        case 'instrumentType':
+          const validTypes = ['FOREX', 'STOCK', 'CRYPTO', 'FUTURES', 'OPTIONS', 'OTHER'];
+          cleaned[key] = validTypes.includes(value) ? value : 'OTHER';
+          break;
+          
+        case 'direction':
+          const validDirections = ['LONG', 'SHORT'];
+          let cleanDirection = typeof value === 'string' ? value.toUpperCase() : 'LONG';
+          if (cleanDirection === 'BUY') cleanDirection = 'LONG';
+          if (cleanDirection === 'SELL') cleanDirection = 'SHORT';
+          cleaned[key] = validDirections.includes(cleanDirection) ? cleanDirection : 'LONG';
+          break;
+          
+        default:
+          cleaned[key] = value;
+      }
+    });
+    
+    console.log('Cleaned trade data:', cleaned);
+    return cleaned;
+  }
+
+  /**
+   * Extract trade data from image with correct schema and actual image analysis
+   */
+  async extractTradeDataFromImage(imageBuffer, mimeType, userId = null) {
+    const extractionPrompt = `
+      Analyze this trading chart/screenshot and extract all visible trade information.
+      
+      Look for and extract:
+      - Instrument/Symbol name (e.g., EUR/USD, AAPL, BTC/USD)
+      - Instrument type (CRITICAL: Determine from the symbol using rules below)
+      - Trade direction (LONG/SHORT) - Convert BUY to LONG, SELL to SHORT
+      - Entry price
+      - Exit price (if closed)
+      - Quantity/Lot size
+      - Position size (usually same as quantity)
+      - Profit/Loss amount
+      - Profit/Loss percentage
+      - Entry date/time
+      - Exit date/time (if closed)
+      - Trade date (usually same as entry date)
+      - Duration (calculate from entry to exit time)
+      - Any visible notes or comments
+      - Tags (any categories or labels visible)
+      
+      INSTRUMENT TYPE DETECTION RULES (MUST FOLLOW):
+      
+      1. FOREX - Currency pairs with "/" separator:
+         Examples: EUR/USD, GBP/JPY, USD/CHF, AUD/CAD, NZD/USD, USD/JPY, GBP/USD, EUR/GBP
+         Pattern: [CURRENCY]/[CURRENCY] where currencies are USD, EUR, GBP, JPY, CHF, AUD, CAD, NZD
+      
+      2. CRYPTO - Cryptocurrency symbols:
+         Examples: BTC/USD, ETH/USD, BTC/USDT, ETH/BTC, SOL/USD, ADA/USD, DOT/USD
+         Pattern: Contains BTC, ETH, SOL, ADA, DOT, USDT, USDC, or ends with cryptocurrency names
+      
+      3. STOCK - Individual company stocks:
+         Examples: AAPL, TSLA, GOOGL, MSFT, AMZN, NVDA, META, NFLX
+         Pattern: 1-5 uppercase letters, no "/" separator, not a currency or crypto
+      
+      4. FUTURES - Futures contracts:
+         Examples: ES, NQ, YM, CL, GC, SI, /ES, /NQ, /CL
+         Pattern: 1-3 letters, often starting with "/" or contains ES, NQ, YM, CL, GC, SI
+      
+      5. OPTIONS - Options contracts:
+         Examples: AAPL240315C150, SPY_240315_C_450, contains CALL/PUT
+         Pattern: Contains CALL, PUT, or has expiration date format (YYMMDD)
+      
+      6. OTHER - Use only when none of the above patterns match
+      
+      CRITICAL EXTRACTION RULES:
+      1. Only extract data that is clearly visible in the image
+      2. For instrumentType: ALWAYS determine using the rules above, DO NOT use OTHER unless absolutely no pattern matches
+      3. For direction: Convert BUY → LONG, SELL → SHORT (ONLY use LONG or SHORT)
+      4. For dates: Use ISO format YYYY-MM-DDTHH:MM:SS.000Z (if only date visible, use T00:00:00.000Z)
+      5. For duration: Use "1h", "30m", "2d" format
+      6. Convert percentages to decimal (5% = 5.0)
+      7. quantity and positionSize should be the same value
+      8. If no tags visible, use empty array []
+      9. If notes not visible, use empty string ""
+      
+      EXAMPLES:
+      - "EUR/USD" → instrumentType: "FOREX"
+      - "AAPL" → instrumentType: "STOCK"  
+      - "BTC/USD" → instrumentType: "CRYPTO"
+      - "ES" or "/ES" → instrumentType: "FUTURES"
+      - "AAPL240315C150" → instrumentType: "OPTIONS"
+      
+      Return JSON array format:
+      [
+        {
+          "instrumentType": "FOREX|STOCK|CRYPTO|FUTURES|OPTIONS|OTHER",
+          "instrumentName": "string",
+          "direction": "LONG|SHORT",
+          "entryPrice": number,
+          "exitPrice": number,
+          "quantity": number,
+          "positionSize": number,
+          "profitLoss": number,
+          "profitLossPercentage": number,
+          "entryDate": "YYYY-MM-DDTHH:MM:SS.000Z",
+          "exitDate": "YYYY-MM-DDTHH:MM:SS.000Z",
+          "tradeDate": "YYYY-MM-DDTHH:MM:SS.000Z",
+          "duration": "string",
+          "notes": "string",
+          "tags": []
+        }
+      ]
+      
+      If you cannot extract any trade data, return: []
+    `;
+
+    const schema = {
+      type: 'array',
+      items: {
+        type: 'object',
+        properties: {
+          instrumentType: { 
+            type: 'string', 
+            enum: ['FOREX', 'STOCK', 'CRYPTO', 'FUTURES', 'OPTIONS', 'OTHER'],
+            description: 'Must be determined using the instrument detection rules'
+          },
+          instrumentName: { type: 'string' },
+          direction: { type: 'string', enum: ['LONG', 'SHORT'] },
+          entryPrice: { type: 'number', minimum: 0 },
+          exitPrice: { type: 'number', minimum: 0 },
+          quantity: { type: 'number', minimum: 0 },
+          positionSize: { type: 'number', minimum: 0 },
+          profitLoss: { type: 'number' },
+          profitLossPercentage: { type: 'number' },
+          entryDate: { type: 'string', pattern: '^\\d{4}-\\d{2}-\\d{2}T\\d{2}:\\d{2}:\\d{2}\\.\\d{3}Z$' },
+          exitDate: { type: 'string', pattern: '^\\d{4}-\\d{2}-\\d{2}T\\d{2}:\\d{2}:\\d{2}\\.\\d{3}Z$' },
+          tradeDate: { type: 'string', pattern: '^\\d{4}-\\d{2}-\\d{2}T\\d{2}:\\d{2}:\\d{2}\\.\\d{3}Z$' },
+          duration: { type: 'string' },
+          notes: { type: 'string' },
+          tags: { type: 'array', items: { type: 'string' } }
+        },
+        required: ['instrumentType', 'instrumentName', 'direction', 'entryPrice']
+      }
+    };
+
+    try {
+      console.log('Extracting trade data from image using Gemini with actual image analysis...');
+      
+      const result = await this.generateStructuredContentWithImage(
+        imageBuffer,
+        mimeType,
+        extractionPrompt,
+        schema
+      );
+
+      console.log('Raw Gemini extraction result:', result);
+
+      // Validate and enhance the extracted data with proper percentage calculation
+      if (result.success && result.data && Array.isArray(result.data)) {
+        console.log('Raw extracted trades:', result.data);
+        
+        // Process trades sequentially to ensure proper percentage calculation
+        const enhancedTrades = [];
+        for (const trade of result.data) {
+          const enhanced = await this.enhanceTradeData(trade, userId);
+          enhancedTrades.push(enhanced);
+        }
+        
+        console.log('Enhanced trades:', enhancedTrades);
+        
+        return {
+          success: true,
+          data: enhancedTrades
+        };
+      }
+
+      return result;
+    } catch (error) {
+      console.error('Trade extraction error:', error);
+      throw error;
+    }
+  }
+
+  /**
+   * Enhance and validate extracted trade data with proper percentage calculation
+   */
+  async enhanceTradeData(trade, userId = null) {
+    const enhanced = { ...trade };
+
+    console.log('Enhancing trade:', trade);
+
+    // Ensure required fields have default values
+    enhanced.tags = Array.isArray(enhanced.tags) ? enhanced.tags : [];
+    enhanced.notes = typeof enhanced.notes === 'string' ? enhanced.notes : '';
+
+    // Set positionSize to quantity if not provided
+    if (!enhanced.positionSize && enhanced.quantity) {
+      enhanced.positionSize = enhanced.quantity;
+    }
+
+    // Handle dates properly
+    const now = new Date();
+    
+    // Ensure entryDate is valid
+    if (enhanced.entryDate) {
+      try {
+        const entryDate = new Date(enhanced.entryDate);
+        enhanced.entryDate = isNaN(entryDate.getTime()) ? now.toISOString() : entryDate.toISOString();
+      } catch (e) {
+        enhanced.entryDate = now.toISOString();
+      }
+    } else {
+      enhanced.entryDate = now.toISOString();
+    }
+
+    // Ensure exitDate is valid
+    if (enhanced.exitDate) {
+      try {
+        const exitDate = new Date(enhanced.exitDate);
+        enhanced.exitDate = isNaN(exitDate.getTime()) ? now.toISOString() : exitDate.toISOString();
+      } catch (e) {
+        enhanced.exitDate = now.toISOString();
+      }
+    } else {
+      enhanced.exitDate = now.toISOString();
+    }
+
+    // Set tradeDate to entryDate if not provided
+    if (!enhanced.tradeDate) {
+      enhanced.tradeDate = enhanced.entryDate;
+    } else {
+      try {
+        const tradeDate = new Date(enhanced.tradeDate);
+        enhanced.tradeDate = isNaN(tradeDate.getTime()) ? enhanced.entryDate : tradeDate.toISOString();
+      } catch (e) {
+        enhanced.tradeDate = enhanced.entryDate;
+      }
+    }
+
+    // Calculate duration if missing but we have entry and exit dates
+    if (!enhanced.duration && enhanced.entryDate && enhanced.exitDate) {
+      try {
+        const entryTime = new Date(enhanced.entryDate);
+        const exitTime = new Date(enhanced.exitDate);
+        const diffMs = exitTime.getTime() - entryTime.getTime();
+        
+        if (diffMs > 0) {
+          const diffMinutes = Math.round(diffMs / (1000 * 60));
+          const diffHours = Math.round(diffMs / (1000 * 60 * 60));
+          const diffDays = Math.round(diffMs / (1000 * 60 * 60 * 24));
+          
+          if (diffMinutes < 60) {
+            enhanced.duration = `${diffMinutes}m`;
+          } else if (diffHours < 24) {
+            enhanced.duration = `${diffHours}h`;
+          } else {
+            enhanced.duration = `${diffDays}d`;
+          }
+        } else {
+          enhanced.duration = '1h';
+        }
+      } catch (error) {
+        console.warn('Duration calculation error:', error);
+        enhanced.duration = '1h';
+      }
+    } else if (!enhanced.duration) {
+      enhanced.duration = '1h';
+    }
+
+    // Calculate profit/loss percentage based on current account balance
+    if (enhanced.profitLoss && userId) {
+      try {
+        console.log('Calculating percentage for profit/loss:', enhanced.profitLoss, 'for user:', userId);
+        enhanced.profitLossPercentage = await calculateProfitLossPercentage(enhanced.profitLoss, userId);
+        console.log('Calculated percentage:', enhanced.profitLossPercentage);
+  } catch (error) {
+        console.warn('Profit/loss percentage calculation error:', error);
+        enhanced.profitLossPercentage = 0;
+      }
+    } else if (!enhanced.profitLossPercentage) {
+      enhanced.profitLossPercentage = 0;
+    }
+
+    // ONLY use fallback detection if instrumentType is missing or explicitly OTHER
+    if (!enhanced.instrumentType || enhanced.instrumentType === 'OTHER') {
+      console.log('Using fallback instrument type detection for:', enhanced.instrumentName);
+      enhanced.instrumentType = this.detectInstrumentType(enhanced.instrumentName);
+    }
+
+    console.log('Enhanced trade result:', enhanced);
+    return enhanced;
+  }
+
+  /**
+   * Fallback instrument type detection (should rarely be needed now)
+   */
+  detectInstrumentType(instrumentName) {
+    if (!instrumentName) return 'OTHER';
+    
+    const name = instrumentName.toUpperCase();
+    
+    console.log('Fallback detection for instrument:', name);
+    
+    // Forex pairs (currency/currency)
+    if (name.includes('/') && (
+      name.includes('USD') || name.includes('EUR') || name.includes('GBP') || 
+      name.includes('JPY') || name.includes('CHF') || name.includes('AUD') || 
+      name.includes('CAD') || name.includes('NZD')
+    )) {
+      return 'FOREX';
     }
     
-    console.error('Unexpected Gemini API response format:', response.data);
-    return generateMockPerformanceAnalysis(trades);
-  } catch (error) {
-    console.error('Error analyzing performance with Gemini API:', error);
-    return generateMockPerformanceAnalysis(trades);
+    // Crypto
+    if (name.includes('BTC') || name.includes('ETH') || name.includes('CRYPTO') || 
+        name.includes('USDT') || name.includes('USDC') || name.includes('SOL') ||
+        name.includes('ADA') || name.includes('DOT')) {
+      return 'CRYPTO';
+    }
+    
+    // Futures (common symbols)
+    if (name.includes('ES') || name.includes('NQ') || name.includes('YM') || 
+        name.includes('CL') || name.includes('GC') || name.includes('SI') ||
+        name.startsWith('/')) {
+      return 'FUTURES';
+    }
+    
+    // Options (usually have expiration dates or CALL/PUT)
+    if (name.includes('CALL') || name.includes('PUT') || 
+        /\d{6}[CP]\d+/.test(name)) {
+      return 'OPTIONS';
+    }
+    
+    // Stock (most common symbols are 1-5 characters)
+    if (/^[A-Z]{1,5}$/.test(name)) {
+      return 'STOCK';
+    }
+    
+    return 'OTHER';
   }
 }
 
-/**
- * Generate mock performance analysis for development/testing
- * @param {Array} trades - Array of trade entries
- * @returns {Object} - Mock performance analysis
- */
-function generateMockPerformanceAnalysis(trades) {
-  const winningTrades = trades.filter(t => t.profitLoss > 0).length;
-  const totalTrades = trades.length;
-  const winRate = totalTrades > 0 ? (winningTrades / totalTrades) * 100 : 0;
-
-  let sentiment = 'neutral';
-  let strengths = [];
-  let weaknesses = [];
-  let recommendations = [];
-  let analysis = "";
-
-  if (winRate >= 60) {
-    sentiment = 'positive';
-    analysis = "Your trading performance shows a strong win rate and consistent profitability. You've demonstrated good discipline in following your trading strategies and risk management practices. The data reveals a pattern of successful trades across multiple instruments, with particularly positive results in forex pairs.";
-    strengths = [
-      "Excellent win rate above industry averages",
-      "Consistent profitability across different market conditions",
-      "Good risk management with appropriate position sizing",
-      "Patience in waiting for high-probability setups"
-    ];
-    weaknesses = [
-      "Occasional premature exits on winning trades",
-      "Some emotional decision-making during market volatility",
-      "Slightly inconsistent performance between different asset classes"
-    ];
-    recommendations = [
-      "Consider setting more defined profit targets to avoid early exits",
-      "Develop a pre-trade checklist to ensure consistency",
-      "Focus on trading during your historically most profitable market hours",
-      "Increase position size gradually on your highest win-rate instruments"
-    ];
-  } else if (winRate >= 40) {
-    sentiment = 'neutral';
-    analysis = "Your trading performance shows a moderate win rate with mixed results. While you've had successful trades, there's room for improvement in consistency and risk management. The data indicates some good trading practices mixed with areas that need refinement.";
-    strengths = [
-      "Several consecutive winning trades showing good strategy implementation",
-      "Reasonable risk management in most trades",
-      "Good instrument selection in volatile markets"
-    ];
-    weaknesses = [
-      "Inconsistent application of stop-loss levels",
-      "Occasional overtrading during losing streaks",
-      "Some trades taken against the prevailing trend"
-    ];
-    recommendations = [
-      "Implement a more consistent stop-loss strategy",
-      "Consider taking a break after 2-3 consecutive losses",
-      "Focus on a smaller set of instruments to develop deeper expertise",
-      "Keep a detailed trading journal with specific entry/exit reasons"
-    ];
-  } else {
-    sentiment = 'negative';
-    analysis = "Your trading performance indicates challenges that need addressing. The win rate is below average, and the data shows inconsistent application of trading principles. However, this presents an opportunity to reassess your approach and implement more structured strategies.";
-    strengths = [
-      "Willingness to try different strategies",
-      "Some successful trades showing potential",
-      "Reasonable position sizing in most cases"
-    ];
-    weaknesses = [
-      "Low win rate indicating strategy issues",
-      "Inconsistent risk management",
-      "Possible emotional trading decisions",
-      "Holding losing positions too long"
-    ];
-    recommendations = [
-      "Review and revise your trading strategy fundamentals",
-      "Implement strict stop-loss rules on every trade",
-      "Consider paper trading while refining your approach",
-      "Focus on one or two trading setups until consistently profitable",
-      "Reduce position size until win rate improves"
-    ];
-  }
-
-  return {
-    analysis,
-    strengths,
-    weaknesses,
-    recommendations,
-    success: true
-  };
-}
-
-module.exports = {
-  analyzeTradeImage,
-  generateTradeInsights,
-  extractTradeData,
-  analyzePerformance
-};
+// Export singleton instance
+module.exports = new GeminiService();

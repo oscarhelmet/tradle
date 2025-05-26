@@ -232,10 +232,10 @@ const Journal: React.FC = () => {
         <div className="mb-6 glass-card shadow-lg rounded-xl p-6">
           <div className="grid grid-cols-1 md:grid-cols-3 lg:grid-cols-5 gap-4">
             {/* Instrument Name Filter */}
-            <div>
+                <div>
               <label htmlFor="instrumentName" className="block text-sm font-medium text-gray-700 mb-1">
                 Instrument
-              </label>
+                  </label>
               <input
                 id="instrumentName"
                 type="text"
@@ -244,25 +244,25 @@ const Journal: React.FC = () => {
                 placeholder="Search instruments..."
                 className="block w-full px-3 py-2 border border-gray-300 rounded-lg shadow-sm placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-primary focus:border-primary"
               />
-            </div>
-
+                </div>
+                
             {/* Direction Filter */}
-            <div>
+                <div>
               <label htmlFor="direction" className="block text-sm font-medium text-gray-700 mb-1">
-                Direction
-              </label>
-              <select
+                    Direction
+                  </label>
+                  <select
                 id="direction"
                 value={filters.direction}
                 onChange={(e) => setFilters({ ...filters, direction: e.target.value })}
                 className="block w-full px-3 py-2 border border-gray-300 rounded-lg shadow-sm focus:outline-none focus:ring-2 focus:ring-primary focus:border-primary"
               >
                 <option value="">All Directions</option>
-                <option value="LONG">Long</option>
-                <option value="SHORT">Short</option>
-              </select>
-            </div>
-
+                    <option value="LONG">Long</option>
+                    <option value="SHORT">Short</option>
+                  </select>
+                </div>
+                
             {/* Outcome Filter */}
             <div>
               <label htmlFor="outcome" className="block text-sm font-medium text-gray-700 mb-1">
@@ -282,26 +282,26 @@ const Journal: React.FC = () => {
             </div>
 
             {/* Date Range Filters */}
-            <div>
+                <div>
               <label htmlFor="startDate" className="block text-sm font-medium text-gray-700 mb-1">
                 Start Date
-              </label>
-              <input
+                  </label>
+                  <input
                 id="startDate"
-                type="date"
+                    type="date"
                 value={filters.startDate}
                 onChange={(e) => setFilters({ ...filters, startDate: e.target.value })}
                 className="block w-full px-3 py-2 border border-gray-300 rounded-lg shadow-sm focus:outline-none focus:ring-2 focus:ring-primary focus:border-primary"
-              />
-            </div>
-
-            <div>
+                  />
+                </div>
+                
+                <div>
               <label htmlFor="endDate" className="block text-sm font-medium text-gray-700 mb-1">
                 End Date
-              </label>
-              <input
+                  </label>
+                  <input
                 id="endDate"
-                type="date"
+                    type="date"
                 value={filters.endDate}
                 onChange={(e) => setFilters({ ...filters, endDate: e.target.value })}
                 className="block w-full px-3 py-2 border border-gray-300 rounded-lg shadow-sm focus:outline-none focus:ring-2 focus:ring-primary focus:border-primary"
@@ -320,8 +320,8 @@ const Journal: React.FC = () => {
             >
               Clear Filters
             </button>
-          </div>
-        </div>
+                </div>
+              </div>
 
         {/* Trades Table */}
         <div className="glass-card rounded-lg shadow-lg overflow-hidden">
@@ -351,17 +351,17 @@ const Journal: React.FC = () => {
               </p>
               {totalTrades === 0 && (
                 <div className="mt-6">
-                  <Link 
-                    to="/journal/new" 
+                    <Link
+                      to="/journal/new"
                     className="inline-flex items-center px-4 py-2 border border-transparent text-sm font-medium rounded-md shadow-sm text-white bg-primary hover:bg-primary-dark focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-primary"
-                  >
-                    <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5 mr-2" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 4v16m8-8H4" />
-                    </svg>
+                    >
+                      <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5 mr-2" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 4v16m8-8H4" />
+                      </svg>
                     Record Your First Trade
-                  </Link>
-                </div>
-              )}
+                    </Link>
+                  </div>
+                )}
             </div>
           ) : (
             <>
@@ -406,67 +406,67 @@ const Journal: React.FC = () => {
                             <div className="text-sm font-medium text-gray-900">
                               {formatDate(trade.entryDate)}
                             </div>
-                          </td>
-                          <td className="px-6 py-4 whitespace-nowrap">
+                        </td>
+                        <td className="px-6 py-4 whitespace-nowrap">
                             <div className="flex items-center space-x-2">
                               <div>
                                 <div className="text-sm font-semibold text-gray-900">
                                   {trade.instrumentName}
                                 </div>
                                 <div className="text-xs font-medium text-gray-500 uppercase">
-                                  {trade.instrumentType}
+                              {trade.instrumentType}
                                 </div>
                               </div>
-                            </div>
-                          </td>
-                          <td className="px-6 py-4 whitespace-nowrap">
+                          </div>
+                        </td>
+                        <td className="px-6 py-4 whitespace-nowrap">
                             <span className={`inline-flex px-3 py-1 text-xs font-semibold rounded-full ${
                               trade.direction === 'LONG' 
                                 ? 'bg-green-100 text-green-800' 
                                 : 'bg-red-100 text-red-800'
-                            }`}>
-                              {trade.direction}
-                            </span>
-                          </td>
+                          }`}>
+                            {trade.direction}
+                          </span>
+                        </td>
                           <td className="px-6 py-4 whitespace-nowrap">
                             <div className="text-sm text-gray-900">
-                              <div>Entry: {trade.entryPrice}</div>
-                              <div>Exit: {trade.exitPrice}</div>
+                          <div>Entry: {trade.entryPrice}</div>
+                          <div>Exit: {trade.exitPrice}</div>
                             </div>
-                          </td>
-                          <td className="px-6 py-4 whitespace-nowrap">
+                        </td>
+                        <td className="px-6 py-4 whitespace-nowrap">
                             <div className={`text-sm font-semibold ${
                               trade.profitLoss >= 0 ? 'text-green-600' : 'text-red-600'
                             }`}>
-                              {trade.profitLoss >= 0 ? '+' : ''}{trade.profitLoss}
+                            {trade.profitLoss >= 0 ? '+' : ''}{trade.profitLoss}
                             </div>
                             <div className={`text-xs ${
                               trade.profitLossPercentage >= 0 ? 'text-green-500' : 'text-red-500'
                             }`}>
                               {trade.profitLossPercentage >= 0 ? '+' : ''}{trade.profitLossPercentage?.toFixed(2)}%
                             </div>
-                          </td>
+                        </td>
                           <td className="px-6 py-4 whitespace-nowrap">
                             <div className="flex flex-col space-y-2">
-                              <div className="flex flex-wrap gap-1">
+                            <div className="flex flex-wrap gap-1">
                                 {trade.tags?.length > 0 ? (
                                   trade.tags.map((tag, index) => (
                                     <span key={index} className="inline-flex px-2 py-1 text-xs bg-blue-100 text-blue-800 rounded">
-                                      {tag}
-                                    </span>
-                                  ))
-                                ) : (
+                                    {tag}
+                                  </span>
+                                ))
+                              ) : (
                                   <span className="text-xs text-gray-400">No tags</span>
-                                )}
-                              </div>
+                              )}
+                            </div>
                               <div className="flex items-center space-x-2">
                                 <span className={`inline-flex items-center px-2 py-1 text-xs font-semibold rounded-full ${reviewStatus.color}`}>
                                   {reviewStatus.icon}
                                   {reviewStatus.status}
                                 </span>
                               </div>
-                            </div>
-                          </td>
+                          </div>
+                        </td>
                           <td className="px-6 py-4 whitespace-nowrap">
                             <div className="flex items-center space-x-3">
                               <Link 
@@ -488,18 +488,18 @@ const Journal: React.FC = () => {
                                   <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z" />
                                 </svg>
                               </Link>
-                              <button
+                            <button
                                 onClick={() => handleDelete(trade._id)}
                                 className="text-red-600 hover:text-red-800 transition-colors"
-                                title="Delete trade"
-                              >
+                              title="Delete trade"
+                            >
                                 <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                                   <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" />
-                                </svg>
-                              </button>
-                            </div>
-                          </td>
-                        </tr>
+                              </svg>
+                            </button>
+                          </div>
+                        </td>
+                      </tr>
                       );
                     })}
                   </tbody>

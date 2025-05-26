@@ -20,7 +20,7 @@ export enum Direction {
 
 export interface TradeEntry {
   _id: string;
-  id?: string;
+  // id?: string;
   userId: string;
   instrumentType: InstrumentType | string;  // e.g., "FOREX", "CRYPTO", "STOCKS"
   instrumentName: string;  // e.g., "EUR/USD", "AAPL", "BTC/USD"
@@ -35,7 +35,7 @@ export interface TradeEntry {
   profitLossPercentage: number;
   entryDate: Date;
   exitDate: Date;
-  tradeDate?: Date;  // For backward compatibility
+  tradeDate: Date;  // This should be a Date object
   duration: string;  // Calculated field: time between entry and exit
   setupType?: string;  // e.g., "Breakout", "Reversal", "Trend Continuation"
   timeframe?: string;  // e.g., "1H", "4H", "1D"
@@ -45,8 +45,8 @@ export interface TradeEntry {
   tags?: string[];
   imageUrls?: string[];  // URLs to chart images
   imageUrl?: string;     // Single image URL for backward compatibility
-  createdAt: Date;
-  updatedAt: Date;
+  createdAt?: Date;
+  updatedAt?: Date;
 }
 
 export interface TradeStatistics {

@@ -85,28 +85,27 @@ exports.protect = async (req, res, next) => {
   let token;
 
   try {
+    console.log('Auth middleware - Checking authentication...');
+    
     // Check if token exists in headers
     if (
       req.headers.authorization &&
       req.headers.authorization.startsWith('Bearer')
     ) {
-      // Extract token from Bearer token
       token = req.headers.authorization.split(' ')[1];
-    } else if (req.headers.authorization) {
-      // Handle case where token is sent without 'Bearer ' prefix
-      token = req.headers.authorization;
+      console.log('Auth middleware - Token found in Authorization header');
     }
 
     // Check if token exists
     if (!token) {
+      console.log('Auth middleware - No token provided');
       return res.status(401).json({
         success: false,
-        error: 'Access token is required'
+        error: 'Access denied. No token provided. Please login to access this resource.'
       });
     }
 
-    console.log('Auth middleware - Token received:', token ? 'Yes' : 'No');
-    console.log('Auth middleware - Token preview:', token ? token.substring(0, 20) + '...' : 'None');
+    console.log('Auth middleware - Token preview:', token.substring(0, 20) + '...');
 
     // Check session first
     const session = getSessionByToken(token);
@@ -114,23 +113,15 @@ exports.protect = async (req, res, next) => {
       console.log('Auth middleware - No valid session found for token');
       return res.status(401).json({
         success: false,
-        error: 'Session expired or invalid'
+        error: 'Session expired or invalid. Please login again.'
       });
     }
 
-    // Verify JWT token
+    console.log('Auth middleware - Valid session found:', session.sessionId);
+
+    // Verify token
     const decoded = jwt.verify(token, process.env.JWT_SECRET);
-    console.log('Auth middleware - Token decoded successfully:', decoded.id);
-
-    // Verify session user matches token user
-    if (session.userId !== decoded.id) {
-      console.log('Auth middleware - Session user mismatch');
-      removeSession(session.sessionId);
-      return res.status(401).json({
-        success: false,
-        error: 'Session user mismatch'
-      });
-    }
+    console.log('Auth middleware - Token verified for user ID:', decoded.id);
 
     // Find user by id
     const user = await User.findById(decoded.id);
@@ -140,7 +131,7 @@ exports.protect = async (req, res, next) => {
       removeSession(session.sessionId);
       return res.status(401).json({
         success: false,
-        error: 'User not found'
+        error: 'User account not found. Please contact support.'
       });
     }
 
@@ -169,18 +160,18 @@ exports.protect = async (req, res, next) => {
       
       return res.status(401).json({
         success: false,
-        error: 'Token expired'
+        error: 'Token expired. Please login again.'
       });
     } else if (err.name === 'JsonWebTokenError') {
       return res.status(401).json({
         success: false,
-        error: 'Invalid token'
+        error: 'Invalid token. Please login again.'
       });
     }
 
     return res.status(401).json({
       success: false,
-      error: 'Authentication failed'
+      error: 'Authentication failed. Please login again.'
     });
   }
 };

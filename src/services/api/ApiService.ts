@@ -66,15 +66,15 @@ class ApiService {
     const headers: HeadersInit = {
       'Content-Type': 'application/json',
     };
-
+    
     if (token) {
       // Ensure token is properly formatted as Bearer token
       headers['Authorization'] = `Bearer ${token.replace('Bearer ', '')}`;
     }
-
+    
     return headers;
   }
-
+  
   /**
    * Make authenticated API request
    */
@@ -97,7 +97,7 @@ class ApiService {
       };
 
       const config: RequestInit = {
-        method,
+      method,
         headers,
       };
 
@@ -128,7 +128,7 @@ class ApiService {
       } else {
         responseData = await response.text();
       }
-
+      
       if (!response.ok) {
         // Handle authentication errors
         if (response.status === 401) {
@@ -150,7 +150,7 @@ class ApiService {
       throw error;
     }
   }
-
+  
   /**
    * Check if API is available and user is authenticated
    */
@@ -282,7 +282,7 @@ class ApiService {
   async getCurrentUser(): Promise<User> {
     return this.request<User>('/auth/me');
   }
-
+  
   /**
    * Update user profile
    */
@@ -293,7 +293,7 @@ class ApiService {
   }): Promise<User> {
     return this.request<User>('/auth/profile', 'PUT', userData);
   }
-
+  
   /**
    * Change user password
    */
@@ -303,7 +303,7 @@ class ApiService {
   }): Promise<{ success: boolean }> {
     return this.request<{ success: boolean }>('/auth/change-password', 'PUT', data);
   }
-
+  
   // Trade methods
   
   /**
@@ -394,58 +394,51 @@ class ApiService {
   }
   
   /**
-   * Create a new trade
-   * @param tradeData - Trade data
-   * @returns Promise resolving to created trade
+   * Get current account balance for percentage calculations
    */
-  async createTrade(tradeData: Omit<TradeEntry, '_id' | 'userId' | 'createdAt' | 'updatedAt'>): Promise<TradeEntry> {
+  async getCurrentBalance(): Promise<number> {
     try {
-      const response = await this.request<any>('/trades', 'POST', tradeData);
-      
-      // If the response is a TradeEntry object, return it directly
-      if (response && response._id) {
-        return response;
-      }
-      
-      // If the response is an object with a 'data' property, return that
-      if (response && response.data) {
-        return response.data;
-      }
-      
-      // Otherwise, throw an error
-      throw new Error('Failed to create trade');
+      const response = await this.request<any>('/metrics/summary');
+      return response.data?.currentBalance || 10000;
     } catch (error) {
-      console.error('Error creating trade:', error);
-      throw error;
+      console.error('Error fetching current balance:', error);
+      return 10000; // Fallback to default
     }
   }
   
   /**
-   * Update a trade
-   * @param id - Trade ID
-   * @param tradeData - Updated trade data
-   * @returns Promise resolving to updated trade
+   * Calculate profit/loss percentage based on current balance
    */
-  async updateTrade(id: string, tradeData: Partial<TradeEntry>): Promise<TradeEntry> {
-    try {
-      const response = await this.request<any>(`/trades/${id}`, 'PUT', tradeData);
-      
-      // If the response is a TradeEntry object, return it directly
-      if (response && (response._id || response.id)) {
-        return response;
-      }
-      
-      // If the response is an object with a 'data' property, return that
-      if (response && response.data) {
-        return response.data;
-      }
-      
-      // Otherwise, throw an error
-      throw new Error('Failed to update trade');
-    } catch (error) {
-      console.error('Error updating trade:', error);
-      throw error;
+  async calculateProfitLossPercentage(profitLoss: number): Promise<number> {
+    const currentBalance = await this.getCurrentBalance();
+    if (currentBalance <= 0) {
+      return 0;
     }
+    return (profitLoss / currentBalance) * 100;
+  }
+  
+  /**
+   * Create a new trade entry with proper percentage calculation
+   */
+  async createTrade(trade: Omit<TradeEntry, 'id' | '_id' | 'userId' | 'createdAt' | 'updatedAt'>): Promise<TradeEntry> {
+    // Calculate percentage before sending to backend
+    if (trade.profitLoss) {
+      trade.profitLossPercentage = await this.calculateProfitLossPercentage(trade.profitLoss);
+    }
+
+    return this.request<TradeEntry>('/trades', 'POST', trade);
+  }
+  
+  /**
+   * Update an existing trade with proper percentage calculation
+   */
+  async updateTrade(id: string, updates: Partial<TradeEntry>): Promise<TradeEntry> {
+    // Recalculate percentage if profitLoss is being updated
+    if (updates.profitLoss !== undefined) {
+      updates.profitLossPercentage = await this.calculateProfitLossPercentage(updates.profitLoss);
+    }
+
+    return this.request<TradeEntry>(`/trades/${id}`, 'PUT', updates);
   }
   
   /**
@@ -688,49 +681,33 @@ class ApiService {
   }
   
   /**
-   * Extract trade data from image
-   * @param file - Image file
-   * @returns Promise resolving to extracted trade data
+   * Extract trade data from an uploaded image
+   * @param file - Image file to analyze
+   * @returns Promise resolving to image URL and extracted trade data
    */
   async extractTradeData(file: File): Promise<{
     imageUrl: string;
     extractedData: Partial<TradeEntry>;
   }> {
-    // If using mock data, return mock extracted data
-    if (process.env.NODE_ENV === 'development' && !process.env.REACT_APP_USE_REAL_API) {
-      return new Promise((resolve) => {
-        setTimeout(() => {
-          resolve({
-            imageUrl: URL.createObjectURL(file),
-            extractedData: {
-              instrumentType: 'FOREX' as InstrumentType,
-              instrumentName: 'EUR/USD',
-              direction: 'LONG' as Direction,
-              entryPrice: 1.0850,
-              exitPrice: 1.0920,
-              stopLoss: 1.0820,
-              takeProfit: 1.0950,
-              profitLoss: 70,
-              profitLossPercentage: 0.65,
-              riskRewardRatio: 2.33
-            }
-          });
-        }, 1000);
-      });
-    }
+    try {
+      console.log('Extracting trade data from image:', file.name);
     
     // Create form data for file upload
     const formData = new FormData();
     formData.append('image', file);
     
-    // Upload to server for extraction
-    const url = `${API_BASE_URL}/analysis/extract`;
-    const token = localStorage.getItem('token');
+      // Upload to server for extraction using reflection endpoint
+      const url = `${this.baseURL}/reflection/analyze-image`;
+      const token = localStorage.getItem('token');
     const headers: HeadersInit = {};
     
     if (token) {
-      headers['Authorization'] = `Bearer ${token}`;
+        // Clean token and add Bearer prefix
+        const cleanToken = token.replace(/^Bearer\s+/i, '');
+        headers['Authorization'] = `Bearer ${cleanToken}`;
     }
+      
+      console.log('Uploading image to:', url);
     
     const response = await fetch(url, {
       method: 'POST',
@@ -740,10 +717,68 @@ class ApiService {
     
     if (!response.ok) {
       const errorData = await response.json().catch(() => ({}));
-      throw new Error(errorData.message || `Data extraction failed with status ${response.status}`);
+        console.error('Image extraction failed:', errorData);
+        throw new Error(errorData.error || `Image extraction failed with status ${response.status}`);
+      }
+      
+      const result = await response.json();
+      console.log('Image extraction result:', result);
+      
+      if (!result.success) {
+        throw new Error(result.error || 'Failed to extract trade data from image');
+      }
+      
+      // Handle the response structure from the new endpoint
+      const trades = result.trades || [];
+      let extractedData: Partial<TradeEntry> = {};
+      
+      if (trades.length > 0) {
+        // Use the first extracted trade
+        const trade = trades[0];
+        extractedData = {
+          instrumentType: trade.instrumentType as InstrumentType,
+          instrumentName: trade.instrumentName,
+          direction: trade.direction as Direction,
+          entryPrice: trade.entryPrice,
+          exitPrice: trade.exitPrice,
+          stopLoss: trade.stopLoss,
+          takeProfit: trade.takeProfit,
+          quantity: trade.quantity,
+          profitLoss: trade.profitLoss,
+          profitLossPercentage: trade.profitLossPercentage,
+          entryDate: trade.entryDate ? new Date(trade.entryDate) : undefined,
+          exitDate: trade.exitDate ? new Date(trade.exitDate) : undefined,
+          notes: trade.notes || '',
+          tags: trade.tags || []
+        };
+        
+        // Calculate risk-reward ratio if stop loss and exit price are available
+        if (trade.entryPrice && trade.exitPrice && trade.stopLoss) {
+          const entry = parseFloat(trade.entryPrice.toString());
+          const exit = parseFloat(trade.exitPrice.toString());
+          const stop = parseFloat(trade.stopLoss.toString());
+          
+          if (trade.direction === 'LONG') {
+            const risk = entry - stop;
+            const reward = exit - entry;
+            extractedData.riskRewardRatio = risk > 0 ? parseFloat((reward / risk).toFixed(2)) : 0;
+          } else {
+            const risk = stop - entry;
+            const reward = entry - exit;
+            extractedData.riskRewardRatio = risk > 0 ? parseFloat((reward / risk).toFixed(2)) : 0;
+          }
+        }
+      }
+      
+      return {
+        imageUrl: result.imageUrl || URL.createObjectURL(file),
+        extractedData
+      };
+      
+    } catch (error) {
+      console.error('Error extracting trade data:', error);
+      throw new Error(`Failed to extract trade data: ${error.message}`);
     }
-    
-    return await response.json();
   }
   
   /**

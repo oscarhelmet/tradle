@@ -6,6 +6,98 @@ import { TradeEntry } from '../../models/TradeEntry';
 import { AIReflection } from '../../models/AIReflection';
 import { markdownToHtml } from '../../utils/markdownToHtml';
 
+interface NotesDisplayProps {
+  notes: string;
+}
+
+const StructuredNotesDisplay: React.FC<NotesDisplayProps> = ({ notes }) => {
+  if (!notes) {
+    return <p className="text-gray-500 italic">No trade notes recorded</p>;
+  }
+  
+  // Try to parse as JSON (new format)
+  try {
+    const parsedNotes = JSON.parse(notes);
+    
+    // Check if it's our structured format
+    if (typeof parsedNotes === 'object' && parsedNotes !== null) {
+      return (
+        <div className="space-y-4">
+          {/* Basic Section */}
+          {(parsedNotes.entryRationale || parsedNotes.exitRationale) && (
+            <div className="bg-white p-4 rounded-md border border-gray-200">
+              <h4 className="font-medium text-gray-900 mb-3">Basic Information</h4>
+              
+              {parsedNotes.entryRationale && (
+                <div className="mb-3">
+                  <h5 className="text-sm font-medium text-gray-700">Entry Rationale</h5>
+                  <p className="mt-1 text-sm text-gray-800 whitespace-pre-line">{parsedNotes.entryRationale}</p>
+                </div>
+              )}
+              
+              {parsedNotes.exitRationale && (
+                <div>
+                  <h5 className="text-sm font-medium text-gray-700">Exit Rationale</h5>
+                  <p className="mt-1 text-sm text-gray-800 whitespace-pre-line">{parsedNotes.exitRationale}</p>
+                </div>
+              )}
+            </div>
+          )}
+          
+          {/* Learning Section */}
+          {parsedNotes.learning && (
+            <div className="bg-white p-4 rounded-md border border-gray-200">
+              <h4 className="font-medium text-gray-900 mb-3">Learning</h4>
+              <p className="text-sm text-gray-800 whitespace-pre-line">{parsedNotes.learning}</p>
+            </div>
+          )}
+          
+          {/* Risk Management Section */}
+          {parsedNotes.riskManagement && (
+            <div className="bg-white p-4 rounded-md border border-gray-200">
+              <h4 className="font-medium text-gray-900 mb-3">Risk Management</h4>
+              <p className="text-sm text-gray-800 whitespace-pre-line">{parsedNotes.riskManagement}</p>
+            </div>
+          )}
+          
+          {/* Psychology Section */}
+          {parsedNotes.psychology && (
+            <div className="bg-white p-4 rounded-md border border-gray-200">
+              <h4 className="font-medium text-gray-900 mb-3">Psychological Notes</h4>
+              <p className="text-sm text-gray-800 whitespace-pre-line">{parsedNotes.psychology}</p>
+            </div>
+          )}
+          
+          {/* Re-trade Decision */}
+          {parsedNotes.retradeDecision && (
+            <div className="bg-white p-4 rounded-md border border-gray-200">
+              <h4 className="font-medium text-gray-900 mb-3">Re-trade Decision</h4>
+              <p className="text-sm text-gray-800 whitespace-pre-line">{parsedNotes.retradeDecision}</p>
+            </div>
+          )}
+          
+          {/* Other Remarks */}
+          {parsedNotes.otherRemarks && (
+            <div className="bg-white p-4 rounded-md border border-gray-200">
+              <h4 className="font-medium text-gray-900 mb-3">Other Remarks</h4>
+              <p className="text-sm text-gray-800 whitespace-pre-line">{parsedNotes.otherRemarks}</p>
+            </div>
+          )}
+        </div>
+      );
+    }
+  } catch (e) {
+    // Not JSON, fall back to plain text display
+  }
+  
+  // Default display for plain text notes (backward compatibility)
+  return (
+    <div className="bg-white p-4 rounded-md border border-gray-200">
+      <p className="text-sm text-gray-800 whitespace-pre-line">{notes}</p>
+    </div>
+  );
+};
+
 const TradeDetail: React.FC = () => {
   const params = useParams();
   const id = params.id;
@@ -322,18 +414,11 @@ const TradeDetail: React.FC = () => {
         </div>
       )}
 
-      {/* Notes Section - Keep as original table format for trade review */}
-      {trade.notes && (
-        <div className="mt-6 bg-white shadow overflow-hidden sm:rounded-lg">
-          <div className="px-4 py-5 sm:px-6">
-            <h3 className="text-lg leading-6 font-medium text-gray-900">Trade Notes</h3>
-            <p className="mt-1 max-w-2xl text-sm text-gray-500">Personal notes and observations</p>
-          </div>
-          <div className="border-t border-gray-200 px-4 py-5 sm:px-6">
-            <p className="text-sm text-gray-900 whitespace-pre-wrap">{trade.notes}</p>
-          </div>
-        </div>
-      )}
+      {/* Notes Section */}
+      <div className="mt-6">
+        <h3 className="text-lg font-medium text-gray-900 mb-4">Trade Analysis & Notes</h3>
+        <StructuredNotesDisplay notes={trade.notes || ''} />
+      </div>
       
       {/* AI Reflection */}
       <div className="mt-8 bg-white shadow overflow-hidden sm:rounded-lg">

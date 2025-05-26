@@ -67,6 +67,20 @@ app.use(cors(corsOptions));
 // Set static folder for uploaded files
 app.use('/uploads', express.static(path.join(__dirname, 'uploads')));
 
+// Middleware to log all requests
+app.use((req, res, next) => {
+  console.log(`${new Date().toISOString()} - ${req.method} ${req.path} - IP: ${req.ip}`);
+  
+  // Log authentication header (without exposing the token)
+  if (req.headers.authorization) {
+    console.log('Request has authorization header');
+  } else {
+    console.log('Request missing authorization header');
+  }
+  
+  next();
+});
+
 // Health check endpoint
 app.get('/api/health', (req, res) => {
   res.json({ 

@@ -4,6 +4,7 @@ import { apiService } from '../../services/api/ApiService';
 import { geminiService } from '../../services/gemini/GeminiService';
 import { InstrumentType, Direction, TradeEntry } from '../../models/TradeEntry';
 import { AIAnalysisResult } from '../../models/AIReflection';
+import TradeNotes from '../../components/forms/TradeNotes';
 
 const EditTrade: React.FC = () => {
   const navigate = useNavigate();
@@ -32,6 +33,8 @@ const EditTrade: React.FC = () => {
     aiInsights: '',
     imageUrl: '',
   });
+  
+  const [notes, setNotes] = useState<string>('');
   
   useEffect(() => {
     const fetchTrade = async () => {
@@ -94,7 +97,7 @@ const EditTrade: React.FC = () => {
     };
     reader.readAsDataURL(file);
     
-    // Ask if user wants to analyze the image
+    // Ask if user wants to analyze the image with AI
     if (window.confirm('Would you like to analyze this chart image with AI?')) {
       analyzeImage(file);
     }
@@ -194,7 +197,7 @@ const EditTrade: React.FC = () => {
         profitLossPercentage = (profitLossValue / (entryPriceValue * positionSizeValue)) * 100;
       }
       
-      const updateData = {
+      const updatedTradeData = {
         instrumentType: formData.instrumentType as InstrumentType | string,
         instrumentName: formData.instrumentName,
         direction: formData.direction as Direction | 'LONG' | 'SHORT',
@@ -209,17 +212,17 @@ const EditTrade: React.FC = () => {
         tradeDate: new Date(formData.tradeDate),
         duration: '1h', // Default duration
         tags: formData.tags.split(',').map(tag => tag.trim()).filter(tag => tag),
-        notes: formData.notes,
+        notes: notes,
         aiInsights: formData.aiInsights, // Include AI insights
         imageUrl,
         imageUrls: imageUrl ? [imageUrl] : []
       };
       
       // Update trade
-      const updatedTrade = await apiService.updateTrade(id, updateData);
+      const updatedTrade = await apiService.updateTrade(id, updatedTradeData);
       
       // Navigate to trade detail page
-      navigate(`/journal/${updatedTrade._id}`);
+      navigate(`/journal/${params.id}`);
       
     } catch (err) {
       setError('Failed to update trade. Please try again.');
@@ -559,24 +562,6 @@ const EditTrade: React.FC = () => {
               </div>
             </div>
             
-            {/* Notes */}
-            <div className="sm:col-span-6">
-              <label htmlFor="notes" className="block text-sm font-medium text-gray-700">
-                Your Notes
-              </label>
-              <div className="mt-1">
-                <textarea
-                  id="notes"
-                  name="notes"
-                  rows={4}
-                  value={formData.notes}
-                  onChange={handleInputChange}
-                  placeholder="Add your personal thoughts and observations about this trade..."
-                  className="shadow-sm focus:ring-primary focus:border-primary block w-full sm:text-sm border-gray-300 rounded-md"
-                />
-              </div>
-            </div>
-            
             {/* AI Insights */}
             {formData.aiInsights && (
               <div className="sm:col-span-6">
@@ -605,10 +590,15 @@ const EditTrade: React.FC = () => {
             )}
           </div>
           
+          <TradeNotes 
+            initialNotes={formData.notes || ''}
+            onChange={(combinedNotes) => setNotes(combinedNotes)}
+          />
+          
           <div className="mt-6 flex justify-end space-x-3">
             <button
               type="button"
-              onClick={() => navigate(`/journal/${id}`)}
+              onClick={() => navigate(`/journal/${params.id}`)}
               className="inline-flex items-center justify-center w-10 h-10 rounded-full bg-gray-100 text-gray-600 hover:bg-gray-200 transition-colors"
               title="Cancel"
             >

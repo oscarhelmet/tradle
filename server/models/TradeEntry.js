@@ -1,6 +1,7 @@
 const mongoose = require('mongoose');
+const Schema = mongoose.Schema;
 
-const TradeEntrySchema = new mongoose.Schema({
+const TradeEntrySchema = new Schema({
   userId: {
     type: mongoose.Schema.Types.ObjectId,
     ref: 'User',
@@ -75,7 +76,9 @@ const TradeEntrySchema = new mongoose.Schema({
     type: Number
   },
   notes: {
-    type: String
+    type: String,
+    default: '',
+    maxlength: 10000 // Increased to handle structured JSON notes
   },
   aiInsights: {
     type: String

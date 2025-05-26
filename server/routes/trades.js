@@ -4,6 +4,7 @@ const { check, validationResult } = require('express-validator');
 const TradeEntry = require('../models/TradeEntry');
 const { protect } = require('../middleware/auth');
 const upload = require('../middleware/upload');
+const { calculateProfitLossPercentage } = require('../utils/tradeCalculations');
 
 /**
  * @route   GET /api/trades
@@ -135,49 +136,64 @@ router.get('/:id', protect, async (req, res) => {
  * @desc    Create a new trade
  * @access  Private
  */
-router.post(
-  '/',
-  [
-    protect,
-    [
-      check('instrumentType', 'Instrument type is required').not().isEmpty(),
-      check('instrumentName', 'Instrument name is required').not().isEmpty(),
-      check('direction', 'Direction is required').not().isEmpty(),
-      check('entryPrice', 'Entry price is required').isNumeric(),
-      check('exitPrice', 'Exit price is required').isNumeric(),
-      check('quantity', 'Quantity is required').isNumeric()
-    ]
-  ],
-  async (req, res) => {
-    // Check for validation errors
-    const errors = validationResult(req);
-    if (!errors.isEmpty()) {
-      return res.status(400).json({ success: false, errors: errors.array() });
-    }
+router.post('/', protect, async (req, res) => {
+  try {
+    const {
+      instrumentType,
+      instrumentName,
+      direction,
+      entryPrice,
+      exitPrice,
+      stopLoss,
+      takeProfit,
+      quantity,
+      profitLoss,
+      entryDate,
+      exitDate,
+      notes,
+      tags,
+      imageUrl
+    } = req.body;
 
-    try {
-      // Create new trade with user ID
-      const newTrade = new TradeEntry({
-        ...req.body,
-        userId: req.user.id
-      });
+    // Calculate profit/loss percentage based on current account balance
+    const profitLossPercentage = await calculateProfitLossPercentage(profitLoss, req.user.id);
 
-      // Save trade to database
-      const trade = await newTrade.save();
+    // Create trade entry
+    const trade = new TradeEntry({
+      userId: req.user.id,
+      instrumentType,
+      instrumentName,
+      direction,
+      entryPrice,
+      exitPrice,
+      stopLoss,
+      takeProfit,
+      quantity,
+      positionSize: quantity, // Set positionSize same as quantity
+      profitLoss,
+      profitLossPercentage, // Use calculated percentage
+      entryDate: entryDate || Date.now(),
+      exitDate: exitDate || Date.now(),
+      tradeDate: entryDate || Date.now(),
+      notes: notes || '',
+      tags: tags || [],
+      imageUrl: imageUrl || ''
+    });
 
-      res.status(201).json({
-        success: true,
-        data: trade
-      });
-    } catch (err) {
-      console.error(err.message);
-      res.status(500).json({
-        success: false,
-        error: 'Server error'
-      });
-    }
+    const savedTrade = await trade.save();
+
+    res.status(201).json({
+      success: true,
+      data: savedTrade
+    });
+  } catch (err) {
+    console.error('Create trade error:', err.message);
+    res.status(400).json({
+      success: false,
+      error: err.message
+    });
   }
-);
+});
 
 /**
  * @route   PUT /api/trades/:id
@@ -186,7 +202,7 @@ router.post(
  */
 router.put('/:id', protect, async (req, res) => {
   try {
-    let trade = await TradeEntry.findById(req.params.id);
+    const trade = await TradeEntry.findById(req.params.id);
 
     if (!trade) {
       return res.status(404).json({
@@ -195,7 +211,7 @@ router.put('/:id', protect, async (req, res) => {
       });
     }
 
-    // Check if the trade belongs to the authenticated user
+    // Check authorization
     if (trade.userId.toString() !== req.user.id) {
       return res.status(403).json({
         success: false,
@@ -203,31 +219,26 @@ router.put('/:id', protect, async (req, res) => {
       });
     }
 
-    // Update trade
-    trade = await TradeEntry.findByIdAndUpdate(
+    // If profitLoss is being updated, recalculate percentage
+    if (req.body.profitLoss !== undefined) {
+      req.body.profitLossPercentage = await calculateProfitLossPercentage(req.body.profitLoss, req.user.id);
+    }
+
+    const updatedTrade = await TradeEntry.findByIdAndUpdate(
       req.params.id,
-      { ...req.body, updatedAt: Date.now() },
+      req.body,
       { new: true, runValidators: true }
     );
 
     res.json({
       success: true,
-      data: trade
+      data: updatedTrade
     });
   } catch (err) {
-    console.error(err.message);
-    
-    // Check if error is due to invalid ObjectId
-    if (err.kind === 'ObjectId') {
-      return res.status(404).json({
-        success: false,
-        error: 'Trade not found'
-      });
-    }
-    
-    res.status(500).json({
+    console.error('Update trade error:', err.message);
+    res.status(400).json({
       success: false,
-      error: 'Server error'
+      error: err.message
     });
   }
 });
